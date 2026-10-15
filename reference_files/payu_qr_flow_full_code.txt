@@ -1,0 +1,1242 @@
+================================================================================
+  PAYU ZION SUBSCRIPTION — QR CODE PAYMENT FLOW — FULL CODE REFERENCE
+  Generated: 2026-10-14
+================================================================================
+
+FLOW OVERVIEW
+=============
+1.  Frontend (views/index.ejs + public/endpoints.js + public/logic.js)
+    - User fills mandate form and clicks "Generate QR Mandate"
+    - logic.js calls POST /api/payments/generate-qr with JSON body
+
+2.  Backend Route (src/api/routes/payment.routes.ts)
+    - Route: POST /api/payments/generate-qr  →  PaymentController.generateQR
+
+3.  Controller (src/api/controllers/payment.controller.ts)
+    - PaymentController.generateQR → PaymentService.generateQRMandate
+
+4.  Service Layer (src/services/payment.service.ts)
+    - PaymentService.generateQRMandate → PayUService.generateQRMandateS2S
+
+5.  PayU Service (src/services/payu.service.ts)
+    - Builds payload: pg=UPI, bankcode=INTENT, txn_s2s_flow=4, api_version=7
+    - Calls generateHashForPayment (includes si_details in hash)
+    - POSTs URL-encoded form to payuConfig.endpoints.paymentUrl via HttpHelper
+
+6.  Hash Utility (src/utils/hash.util.ts)
+    - generateHashForPayment: key|txnid|amount|productinfo|firstname|email|...|si_details|SALT
+
+7.  HTTP Utility (src/utils/http.util.ts)
+    - HttpHelper.postForm → axios POST with Content-Type: application/x-www-form-urlencoded
+
+8.  PayU Response
+    - Returns JSON with result.intentURIData (the UPI deep-link)
+
+9.  Frontend QR Rendering (public/logic.js)
+    - Extracts intentURIData from response
+    - Uses QRCode.js (CDN) to render QR image client-side via QRCode.toDataURL()
+    - Sets <img id="qrImage">.src = base64 data URL — no backend image serving needed
+
+SUCCESS / FAILURE CALLBACKS
+===========================
+- PayU POSTs to POST /api/payments/success  →  PaymentController.handleSuccess
+- PayU POSTs to POST /api/payments/failure  →  PaymentController.handleFailure
+- Both validate reverse hash and log to payment_logs.json
+
+================================================================================
+
+================================================================================
+FILE: .env.example
+DESC: src/config/index.ts placeholder — env vars
+================================================================================
+
+PORT=3000
+NODE_ENV=development
+
+PAYU_MERCHANT_KEY=your_merchant_key
+PAYU_SALT=your_salt
+PAYU_BASE_URL=https://test.payu.in # Test environment URL
+
+================================================================================
+FILE: src/config/index.ts
+DESC: App config — reads env vars
+================================================================================
+
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables from .env file
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+
+export const config = {
+  env: process.env.NODE_ENV || 'development',
+  port: parseInt(process.env.PORT || '3000', 10),
+  payu: {
+    merchantKey: process.env.PAYU_MERCHANT_KEY || '',
+    salt: process.env.PAYU_SALT || '',
+    baseUrl: process.env.PAYU_BASE_URL || 'https://test.payu.in',
+  },
+  checkoutUrl: process.env.CHECKOUT_URL || `http://localhost:${process.env.PORT || '3000'}`,
+};
+
+================================================================================
+FILE: src/config/payu.config.ts
+DESC: PayU-specific config (endpoints)
+================================================================================
+
+import { config } from './index';
+
+export const payuConfig = {
+  merchantKey: config.payu.merchantKey,
+  salt: config.payu.salt,
+  baseUrl: config.payu.baseUrl,
+
+  // Specific endpoints
+  endpoints: {
+    paymentUrl: `${config.payu.baseUrl}/_payment`,
+    apiUrl: `${config.payu.baseUrl}/merchant/postservice?form=2`, // For backend API calls
+  },
+};
+
+================================================================================
+FILE: src/core/interfaces/payu.interface.ts
+DESC: TypeScript interfaces
+================================================================================
+
+export interface PayUMandateRequest {
+  txnid: string;
+  amount: string;
+  productinfo: string;
+  firstname: string;
+  email: string;
+  phone: string;
+  surl: string;
+  furl: string;
+  si: number; // 1 for Standing Instruction
+  si_details?: string; // JSON string for SI details
+  user_credentials?: string;
+  pg?: string;
+  bankcode?: string;
+}
+
+export interface PayUSIDetails {
+  billingAmount: string;
+  billingCurrency: string;
+  billingCycle: string; // e.g., 'MONTHLY', 'YEARLY'
+  billingInterval: number; // e.g., 1
+  paymentStartDate: string; // YYYY-MM-DD
+  paymentEndDate: string; // YYYY-MM-DD
+}
+
+================================================================================
+FILE: src/core/enums/payu.enum.ts
+DESC: PayU enums (commands)
+================================================================================
+
+export enum PayUCommand {
+  // Add other commands as needed, e.g., verify_payment, get_ws_context
+  VERIFY_PAYMENT = 'verify_payment',
+  CHECK_PAYMENT = 'check_payment',
+  CANCEL_REFUND_TRANSACTION = 'cancel_refund_transaction',
+}
+
+export enum PayUSubventionType {
+  SI = 'SI',
+}
+
+================================================================================
+FILE: src/core/enums/payment.enum.ts
+DESC: Payment enums (status)
+================================================================================
+
+export enum PaymentStatus {
+  SUCCESS = 'success',
+  FAILED = 'failed',
+  PENDING = 'pending',
+  CANCELLED = 'cancelled',
+}
+
+export enum Currency {
+  INR = 'INR',
+}
+
+================================================================================
+FILE: src/utils/logger.util.ts
+DESC: Logger utility
+================================================================================
+
+export const logger = {
+  info: (...args: any[]) => {
+    console.log(`[INFO] [${new Date().toISOString()}]`, ...args);
+  },
+  error: (...args: any[]) => {
+    console.error(`[ERROR] [${new Date().toISOString()}]`, ...args);
+  },
+  warn: (...args: any[]) => {
+    console.warn(`[WARN] [${new Date().toISOString()}]`, ...args);
+  },
+};
+
+================================================================================
+FILE: src/utils/hash.util.ts
+DESC: Hash utility — SHA-512 for PayU
+================================================================================
+
+import crypto from 'crypto';
+import { payuConfig } from '../config/payu.config';
+
+/**
+ * Generates a SHA-512 hash string.
+ * @param hashString The string to hash
+ * @returns The hashed string
+ */
+export const generateHash = (hashString: string): string => {
+  const hash = crypto.createHash('sha512');
+  hash.update(hashString);
+  return hash.digest('hex');
+};
+
+/**
+ * Generates the hash required for initiating a PayU transaction (including Zion Mandate).
+ * The sequence for payment hash is: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT
+ */
+export const generateHashForPayment = (
+  txnid: string,
+  amount: string,
+  productinfo: string,
+  firstname: string,
+  email: string,
+  si_details: string = '',
+  udf1: string = '',
+  udf2: string = '',
+  udf3: string = '',
+  udf4: string = '',
+  udf5: string = '',
+): string => {
+  const { merchantKey, salt } = payuConfig;
+  if (si_details) {
+      const hashString = `${merchantKey}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|${udf1}|${udf2}|${udf3}|${udf4}|${udf5}||||||${si_details}|${salt}`;
+      return generateHash(hashString);
+  } else {
+      const hashString = `${merchantKey}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|${udf1}|${udf2}|${udf3}|${udf4}|${udf5}||||||${salt}`;
+      return generateHash(hashString);
+  }
+};
+
+/**
+ * Validates the hash received from PayU (reverse hash).
+ * The sequence for reverse hash is: SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
+ */
+export const validateReverseHash = (
+  status: string,
+  txnid: string,
+  amount: string,
+  productinfo: string,
+  firstname: string,
+  email: string,
+  receivedHash: string,
+  udf1: string = '',
+  udf2: string = '',
+  udf3: string = '',
+  udf4: string = '',
+  udf5: string = '',
+): boolean => {
+  const { merchantKey, salt } = payuConfig;
+  const hashString = `${salt}|${status}||||||${udf5}|${udf4}|${udf3}|${udf2}|${udf1}|${email}|${firstname}|${productinfo}|${amount}|${txnid}|${merchantKey}`;
+  const calculatedHash = generateHash(hashString);
+  return calculatedHash === receivedHash;
+};
+
+/**
+ * Generates hash for generic API commands (like verify_payment).
+ * Formula: key|command|var1|salt
+ */
+export const generateHashForCommand = (command: string, var1: string): string => {
+  const { merchantKey, salt } = payuConfig;
+  const hashString = `${merchantKey}|${command}|${var1}|${salt}`;
+  return generateHash(hashString);
+};
+
+================================================================================
+FILE: src/utils/http.util.ts
+DESC: HTTP utility — axios wrapper for PayU
+================================================================================
+
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import { logger } from './logger.util';
+
+/**
+ * Common HTTP helper class for making external API requests.
+ */
+export class HttpHelper {
+  /**
+   * Generic POST request method
+   */
+  public static async post<T>(url: string, data: any, config?: AxiosRequestConfig): Promise<T> {
+    try {
+      logger.info(`Making POST request to ${url}`);
+      const response: AxiosResponse<T> = await axios.post(url, data, config);
+      
+      const responseDataToLog = typeof response.data === 'string' 
+        ? response.data.substring(0, 1000) + ((response.data as string).length > 1000 ? '...' : '')
+        : JSON.stringify(response.data, null, 2);
+        
+      logger.info(`Response from ${url}:`, responseDataToLog);
+      return response.data;
+    } catch (error: any) {
+      logger.error(`POST request failed for ${url}:`, error.message);
+      if (error.response) {
+        const errorDataToLog = typeof error.response.data === 'string'
+          ? error.response.data.substring(0, 1000)
+          : JSON.stringify(error.response.data, null, 2);
+        logger.error(`Error Response from ${url}:`, errorDataToLog);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Specific POST request tailored for PayU URL-encoded forms
+   */
+  public static async postForm<T>(url: string, data: Record<string, string>): Promise<T> {
+    logger.info(`[postForm] Payload to ${url}:`, JSON.stringify(data, null, 2));
+
+    const params = new URLSearchParams();
+    for (const key in data) {
+      if (data.hasOwnProperty(key)) {
+        params.append(key, String(data[key]));
+      }
+    }
+
+    const config: AxiosRequestConfig = {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    };
+
+    return this.post<T>(url, params, config);
+  }
+}
+
+================================================================================
+FILE: src/services/payu.service.ts
+DESC: PayU Service — CORE QR S2S FLOW
+================================================================================
+
+import { payuConfig } from '../config/payu.config';
+import { PayUMandateRequest, PayUSIDetails } from '../core/interfaces/payu.interface';
+import { generateHashForPayment, generateHashForCommand } from '../utils/hash.util';
+import { HttpHelper } from '../utils/http.util';
+import { PayUCommand } from '../core/enums/payu.enum';
+import { logger } from '../utils/logger.util';
+
+export class PayUService {
+  /**
+   * Generates the payload required to initiate a Zion Subscription Mandate setup
+   * via Merchant Hosted Checkout.
+   */
+  public generateMandatePayload(
+    txnid: string,
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    surl: string,
+    furl: string,
+    siDetails: PayUSIDetails,
+  ) {
+    const hash = generateHashForPayment(txnid, amount, productinfo, firstname, email);
+
+    const payload: PayUMandateRequest = {
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      si: 1, // 1 for setting up standing instruction
+      si_details: JSON.stringify(siDetails),
+    };
+
+    return {
+      url: payuConfig.endpoints.paymentUrl,
+      key: payuConfig.merchantKey,
+      hash,
+      ...payload,
+    };
+  }
+
+  /**
+   * Generates the payload required to initiate a Zion Subscription Mandate setup
+   * via Merchant Hosted Checkout using UPI QR.
+   */
+  public async generateQRMandateS2S(
+    txnid: string,
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    surl: string,
+    furl: string,
+    siDetails: PayUSIDetails,
+  ): Promise<any> {
+    const siDetailsStr = JSON.stringify(siDetails);
+    console.log({siDetailsStr});
+    const hash = generateHashForPayment(txnid, amount, productinfo, firstname, email, siDetailsStr);
+
+    const payload: any = {
+      key: payuConfig.merchantKey,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      si: 1, // 1 for setting up standing instruction
+      si_details: siDetailsStr,
+      pg: 'UPI',
+      bankcode: 'INTENT',
+      txn_s2s_flow: 4,
+      api_version: '7',
+      hash,
+    };
+
+    logger.info(`Generating S2S QR Mandate for txnid: ${txnid}`);
+    return await HttpHelper.postForm(payuConfig.endpoints.paymentUrl, payload);
+  }
+
+  public async generateUpiCollectS2S(
+    txnid: string,
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    vpa: string,
+    surl: string,
+    furl: string,
+    siDetails: PayUSIDetails,
+  ): Promise<any> {
+    const siDetailsStr = JSON.stringify(siDetails);
+    const hash = generateHashForPayment(txnid, amount, productinfo, firstname, email, siDetailsStr);
+
+    const payload: any = {
+      key: payuConfig.merchantKey,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      si: 1,
+      si_details: siDetailsStr,
+      pg: 'UPI',
+      bankcode: 'UPI',
+      vpa: vpa,
+      txn_s2s_flow: 1,
+      api_version: '7',
+      hash,
+    };
+
+    logger.info(`Generating S2S UPI Collect Mandate for txnid: ${txnid} to VPA: ${vpa}`);
+    return await HttpHelper.postForm(payuConfig.endpoints.paymentUrl, payload);
+  }
+
+  /**
+   * Verifies a transaction status with PayU
+   */
+  public async verifyTransaction(txnid: string): Promise<any> {
+    const command = PayUCommand.VERIFY_PAYMENT;
+    const hash = generateHashForCommand(command, txnid);
+
+    const data = {
+      key: payuConfig.merchantKey,
+      command,
+      var1: txnid,
+      hash,
+    };
+
+    logger.info(`Verifying transaction: ${txnid}`);
+    return await HttpHelper.postForm(payuConfig.endpoints.apiUrl, data);
+  }
+}
+
+================================================================================
+FILE: src/services/payment.service.ts
+DESC: Payment Service — orchestrates PayU calls
+================================================================================
+
+import { PayUService } from './payu.service';
+import { PayUSIDetails } from '../core/interfaces/payu.interface';
+import { config } from '../config/index';
+import crypto from 'crypto';
+
+export class PaymentService {
+  private payuService: PayUService;
+
+  constructor() {
+    this.payuService = new PayUService();
+  }
+
+  /**
+   * Initiates a new subscription mandate.
+   * This would typically save the transaction to the database before calling PayU.
+   */
+  public initiateMandate(
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    siDetails: PayUSIDetails,
+  ) {
+    // Generate a unique transaction ID
+    const txnid = 'Txn' + crypto.randomBytes(8).toString('hex');
+
+    const surl = `${config.checkoutUrl}/api/payments/success`;
+    const furl = `${config.checkoutUrl}/api/payments/failure`;
+
+    const payload = this.payuService.generateMandatePayload(
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      siDetails,
+    );
+
+    // Normally: await this.repository.save({ txnid, status: 'pending', ... })
+
+    return payload;
+  }
+
+  /**
+   * Initiates a new subscription mandate using QR code.
+   */
+  public async generateQRMandate(
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    siDetails: PayUSIDetails,
+  ) {
+    const txnid = 'TxnQR' + crypto.randomBytes(8).toString('hex');
+
+    const surl = `${config.checkoutUrl}/api/payments/success`;
+    const furl = `${config.checkoutUrl}/api/payments/failure`;
+
+    const result = await this.payuService.generateQRMandateS2S(
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      siDetails,
+    );
+
+    return result;
+  }
+
+  public async generateUpiCollectMandate(
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    vpa: string,
+    siDetails: PayUSIDetails,
+  ) {
+    const txnid = 'TxnUPI' + crypto.randomBytes(8).toString('hex');
+
+    const surl = `${config.checkoutUrl}/api/payments/success`;
+    const furl = `${config.checkoutUrl}/api/payments/failure`;
+
+    const result = await this.payuService.generateUpiCollectS2S(
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      vpa,
+      surl,
+      furl,
+      siDetails,
+    );
+
+    return result;
+  }
+
+  public async verifyPayment(txnid: string) {
+    return await this.payuService.verifyTransaction(txnid);
+  }
+}
+
+================================================================================
+FILE: src/api/controllers/payment.controller.ts
+DESC: Payment Controller — Express handlers
+================================================================================
+
+import { Request, Response, NextFunction } from 'express';
+import { PaymentService } from '../../services/payment.service';
+import { validateReverseHash } from '../../utils/hash.util';
+import { logger } from '../../utils/logger.util';
+import fs from 'fs';
+import path from 'path';
+import { config } from '../../config';
+
+const appendLogToFile = (data: any, type: 'success' | 'failure') => {
+  const logFilePath = path.resolve(process.cwd(), 'payment_logs.json');
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    type,
+    data
+  };
+
+  try {
+    let logs: any[] = [];
+    if (fs.existsSync(logFilePath)) {
+      const fileContent = fs.readFileSync(logFilePath, 'utf8');
+      if (fileContent) {
+        logs = JSON.parse(fileContent);
+      }
+    }
+    logs.push(logEntry);
+    fs.writeFileSync(logFilePath, JSON.stringify(logs, null, 2));
+  } catch (err) {
+    logger.error('Failed to write log to file: ' + err);
+  }
+};
+
+export class PaymentController {
+  private paymentService: PaymentService;
+
+  constructor() {
+    this.paymentService = new PaymentService();
+  }
+
+  public initiateMandate = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { amount, productinfo, firstname, email, phone, siDetails } = req.body;
+
+      const payload = this.paymentService.initiateMandate(
+        amount,
+        productinfo,
+        firstname,
+        email,
+        phone,
+        siDetails,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: payload,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public generateQR = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { amount, productinfo, firstname, email, phone, siDetails } = req.body;
+
+      const payload = await this.paymentService.generateQRMandate(
+        amount,
+        productinfo,
+        firstname,
+        email,
+        phone,
+        siDetails,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: payload,
+      });
+    } catch (error: any) {
+      logger.error('Error generating QR Mandate: ' + error.message);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        payuData: error.response?.data,
+      });
+    }
+  };
+
+  public generateUpiCollect = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { amount, productinfo, firstname, email, phone, vpa, siDetails } = req.body;
+
+      const payload = await this.paymentService.generateUpiCollectMandate(
+        amount,
+        productinfo,
+        firstname,
+        email,
+        phone,
+        vpa,
+        siDetails,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: payload,
+      });
+    } catch (error: any) {
+      console.error(error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        payuData: error.response?.data
+      });
+    }
+  };
+
+  public handleSuccess = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { status, txnid, amount, productinfo, firstname, email, hash } = req.body;
+
+      logger.info(`Received success callback for txnid: ${txnid}`);
+
+      // Optional: Verify the reverse hash to ensure the response is authentically from PayU
+      const isValid = validateReverseHash(
+        String(status),
+        String(txnid),
+        String(amount),
+        String(productinfo),
+        String(firstname),
+        String(email),
+        String(hash),
+      );
+
+      if (!isValid) {
+        logger.warn(`Hash validation failed for txnid: ${txnid}`);
+        return res.status(400).send('Hash validation failed');
+      }
+
+      // Normally: update database record for txnid to 'success'
+      appendLogToFile(req.body, 'success');
+
+      // Since this is a direct POST from PayU to our backend, we redirect the user
+      res.redirect(`${config.checkoutUrl}/success`);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public handleFailure = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { txnid, error_Message } = req.body;
+      logger.error(`Received failure callback for txnid: ${txnid}. Reason: ${error_Message}`);
+
+      // Normally: update database record for txnid to 'failed'
+      appendLogToFile(req.body, 'failure');
+
+      res.redirect(`${config.checkoutUrl}/failure`);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public verifyPayment = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { txnid } = req.params;
+      const result = await this.paymentService.verifyPayment(String(txnid));
+
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+================================================================================
+FILE: src/api/routes/payment.routes.ts
+DESC: Express routes
+================================================================================
+
+import { Router } from 'express';
+import { PaymentController } from '../controllers/payment.controller';
+
+export const paymentRoutes = Router();
+const paymentController = new PaymentController();
+
+// API to generate payload for PayU form submission
+paymentRoutes.post('/initiate-mandate', paymentController.initiateMandate);
+
+// API to generate QR payload for PayU
+paymentRoutes.post('/generate-qr', paymentController.generateQR);
+paymentRoutes.post('/generate-upi-collect', paymentController.generateUpiCollect);
+
+// Webhook/Callback routes for PayU to post back the result
+paymentRoutes.post('/success', paymentController.handleSuccess);
+paymentRoutes.post('/failure', paymentController.handleFailure);
+
+// API to manually verify a payment status
+paymentRoutes.get('/verify/:txnid', paymentController.verifyPayment);
+
+
+================================================================================
+FILE: src/middlewares/error.middleware.ts
+DESC: Error middleware
+================================================================================
+
+import { Request, Response, NextFunction } from 'express';
+import { logger } from '../utils/logger.util';
+
+export const errorMiddleware = (error: Error, req: Request, res: Response, next: NextFunction) => {
+  logger.error(`Error processing request ${req.method} ${req.url}: ${error.message}`);
+
+  res.status(500).json({
+    status: 'error',
+    message: 'An internal server error occurred',
+  });
+};
+
+================================================================================
+FILE: src/app.ts
+DESC: Express app setup
+================================================================================
+
+import express, { Application, Request, Response } from 'express';
+import cors from 'cors';
+import path from 'path';
+
+import { paymentRoutes } from './api/routes/payment.routes';
+import { errorMiddleware } from './middlewares/error.middleware';
+
+export const app: Application = express();
+
+// View Engine Setup (EJS)
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, '../views'));
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Serve static frontend assets (CSS, JS)
+app.use(express.static(path.join(__dirname, '../public')));
+
+// Render the EJS UI
+app.get('/', (req: Request, res: Response) => {
+  res.render('index');
+});
+
+// API Routes
+app.use('/api/payments', paymentRoutes);
+
+// Error handling middleware (should be last)
+app.use(errorMiddleware);
+
+
+================================================================================
+FILE: src/server.ts
+DESC: Server entry point
+================================================================================
+
+import { app } from './app';
+import { config } from './config';
+import { logger } from './utils/logger.util';
+
+const startServer = () => {
+  try {
+    app.listen(config.port, () => {
+      logger.info(`Server is running in ${config.env} mode on http://localhost:${config.port}`);
+      logger.info(`Frontend UI available at http://localhost:${config.port}/`);
+    });
+  } catch (error) {
+    logger.error('Failed to start the server', error);
+    process.exit(1);
+  }
+};
+
+startServer();
+
+================================================================================
+FILE: public/endpoints.js
+DESC: Frontend API endpoint constants
+================================================================================
+
+const API_BASE_URL = '/api';
+
+const endpoints = {
+    initiateMandate: `${API_BASE_URL}/payments/initiate-mandate`,
+    generateQR: `${API_BASE_URL}/payments/generate-qr`,
+    generateUpiCollect: `${API_BASE_URL}/payments/generate-upi-collect`,
+    verifyPayment: (txnid) => `${API_BASE_URL}/payments/verify/${txnid}`
+};
+
+================================================================================
+FILE: public/logic.js
+DESC: Frontend logic — QR rendering via QRCode.js
+================================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Set default dates to today and 1 year from now
+    const startDateInput = document.getElementById('paymentStartDate');
+    const endDateInput = document.getElementById('paymentEndDate');
+    
+    const today = new Date();
+    startDateInput.value = today.toISOString().split('T')[0];
+    
+    const nextYear = new Date();
+    nextYear.setFullYear(today.getFullYear() + 1);
+    endDateInput.value = nextYear.toISOString().split('T')[0];
+
+    const form = document.getElementById('mandateForm');
+    const responseContainer = document.getElementById('responseContainer');
+    const jsonResponse = document.getElementById('jsonResponse');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Processing...';
+
+        // Gather data
+        const payload = {
+            amount: document.getElementById('amount').value,
+            productinfo: document.getElementById('productinfo').value,
+            firstname: document.getElementById('firstname').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value,
+            siDetails: {
+                billingAmount: document.getElementById('billingAmount').value,
+                billingCurrency: 'INR',
+                billingCycle: document.getElementById('billingCycle').value,
+                billingInterval: 1, // Example fixed value
+                paymentStartDate: document.getElementById('paymentStartDate').value,
+                paymentEndDate: document.getElementById('paymentEndDate').value,
+            }
+        };
+
+        try {
+            // Call backend API
+            const response = await fetch(endpoints.initiateMandate, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                // Show JSON response for debugging
+                responseContainer.classList.remove('hidden');
+                jsonResponse.textContent = JSON.stringify(result.data, null, 2);
+
+                // Auto-submit form to PayU using the generated payload
+                submitPayUForm(result.data);
+            } else {
+                alert('Failed to initiate mandate.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred. Check console.');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Initiate Mandate Setup';
+        }
+    });
+
+    const qrBtn = document.getElementById('qrBtn');
+
+    qrBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        
+        qrBtn.disabled = true;
+        qrBtn.textContent = 'Processing...';
+
+        // Gather data
+        const payload = {
+            amount: document.getElementById('amount').value,
+            productinfo: document.getElementById('productinfo').value,
+            firstname: document.getElementById('firstname').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value,
+            siDetails: {
+                billingAmount: document.getElementById('billingAmount').value,
+                billingCurrency: 'INR',
+                billingCycle: document.getElementById('billingCycle').value,
+                billingInterval: 1, // Example fixed value
+                paymentStartDate: document.getElementById('paymentStartDate').value,
+                paymentEndDate: document.getElementById('paymentEndDate').value,
+            }
+        };
+
+        try {
+            // Call backend API
+            const response = await fetch(endpoints.generateQR, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                // Show JSON response for debugging
+                responseContainer.classList.remove('hidden');
+                jsonResponse.textContent = JSON.stringify(result.data, null, 2);
+
+                const payuResponse = result.data;
+                const intentStr = (payuResponse && payuResponse.result) ? (payuResponse.result.intentURIData || payuResponse.result.intentUrl || payuResponse.result.qrString) : null;
+                
+                if (intentStr) {
+                    const redirectText = document.getElementById('redirectText');
+                    if (redirectText) redirectText.style.display = 'none';
+                    
+                    document.getElementById('qrCodeContainer').style.display = 'block';
+                    
+                    // Generate QR image securely and instantly on the frontend
+                    QRCode.toDataURL(intentStr, { width: 250, margin: 2 }, function (err, url) {
+                        if (err) {
+                            console.error('QR Generation Error:', err);
+                            return;
+                        }
+                        document.getElementById('qrImage').src = url;
+                        document.getElementById('qrIntentText').textContent = intentStr;
+                    });
+                } else if (typeof payuResponse === 'string' && payuResponse.includes('html')) {
+                    // Fallback if UPI Intent S2S is not enabled or returns HTML
+                    alert('UPI Intent S2S returned checkout HTML. Falling back to PayU Hosted Checkout.');
+                    document.write(payuResponse);
+                } else {
+                    alert('Failed to generate Intent QR. Check JSON response for details.');
+                }
+            } else {
+                alert('Failed to generate QR mandate.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred. Check console.');
+        } finally {
+            qrBtn.disabled = false;
+            qrBtn.textContent = 'Generate QR Mandate';
+        }
+    });
+
+    const upiCollectBtn = document.getElementById('upiCollectBtn');
+
+    upiCollectBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        
+        upiCollectBtn.disabled = true;
+        upiCollectBtn.textContent = 'Processing...';
+
+        const payload = {
+            amount: document.getElementById('amount').value,
+            productinfo: document.getElementById('productinfo').value,
+            firstname: document.getElementById('firstname').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value,
+            vpa: document.getElementById('vpa').value,
+            siDetails: {
+                billingAmount: document.getElementById('billingAmount').value,
+                billingCurrency: 'INR',
+                billingCycle: document.getElementById('billingCycle').value,
+                billingInterval: 1,
+                paymentStartDate: document.getElementById('paymentStartDate').value,
+                paymentEndDate: document.getElementById('paymentEndDate').value,
+            }
+        };
+
+        try {
+            const response = await fetch(endpoints.generateUpiCollect, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            
+            if (result.success) {
+                responseContainer.classList.remove('hidden');
+                jsonResponse.textContent = JSON.stringify(result.data, null, 2);
+                
+                const payuResponse = result.data;
+                if (typeof payuResponse === 'string' && payuResponse.includes('html')) {
+                    alert('S2S UPI Collect is not enabled. Falling back to Hosted Checkout.');
+                    document.write(payuResponse);
+                } else {
+                    document.getElementById('qrCodeContainer').style.display = 'block';
+                    document.getElementById('qrIntentText').textContent = "UPI Collect Request Sent to " + payload.vpa;
+                    document.getElementById('qrImage').style.display = 'none'; // hide QR for collect
+                }
+            } else {
+                alert('Failed to setup mandate via UPI ID.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred. Check console.');
+        } finally {
+            upiCollectBtn.disabled = false;
+            upiCollectBtn.textContent = 'Setup Mandate via UPI ID';
+        }
+    });
+});
+
+/**
+ * Creates a hidden form dynamically and submits it to PayU
+ * @param {Object} payuData The payload generated by the backend
+ */
+function submitPayUForm(payuData) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = payuData.url;
+    
+    // Add all keys from payuData as hidden inputs except 'url'
+    for (const key in payuData) {
+        if (key !== 'url' && payuData.hasOwnProperty(key)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = payuData[key];
+            form.appendChild(input);
+        }
+    }
+
+    document.body.appendChild(form);
+    
+    // Small delay to allow user to see the JSON payload before redirect
+    setTimeout(() => {
+        form.submit();
+    }, 2000);
+}
+
+================================================================================
+FILE: views/index.ejs
+DESC: EJS template — UI with QR display container
+================================================================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PayU Zion Automation Testing</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Zion Subscription Mandate Setup</h1>
+        <p>This UI tests the Custom Merchant Hosted Checkout for setting up a PayU Zion Mandate.</p>
+        
+        <form id="mandateForm">
+            <div class="form-group">
+                <label for="amount">Amount (INR)</label>
+                <input type="text" id="amount" value="1.00" required>
+            </div>
+            <div class="form-group">
+                <label for="productinfo">Product Info</label>
+                <input type="text" id="productinfo" value="Subscription Plan A" required>
+            </div>
+            <div class="form-group">
+                <label for="firstname">First Name</label>
+                <input type="text" id="firstname" value="John" required>
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" value="john@example.com" required>
+            </div>
+            <div class="form-group">
+                <label for="phone">Phone</label>
+                <input type="text" id="phone" value="9876543210" required>
+            </div>
+
+            <div class="form-group">
+                <label for="vpa">UPI ID (VPA) for Collect</label>
+                <input type="text" id="vpa" value="success@ybl" placeholder="e.g. user@upi">
+            </div>
+
+            <fieldset>
+                <legend>SI Details (Standing Instruction)</legend>
+                <div class="form-group">
+                    <label for="billingAmount">Billing Amount</label>
+                    <input type="text" id="billingAmount" value="2.00" required>
+                </div>
+                <div class="form-group">
+                    <label for="billingCycle">Billing Cycle</label>
+                    <select id="billingCycle">
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="YEARLY">Yearly</option>
+                        <option value="WEEKLY">Weekly</option>
+                        <option value="DAILY">Daily</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="paymentStartDate">Start Date</label>
+                    <input type="date" id="paymentStartDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="paymentEndDate">End Date</label>
+                    <input type="date" id="paymentEndDate" required>
+                </div>
+            </fieldset>
+
+            <div class="buttons">
+                <button type="submit" id="submitBtn">Initiate Mandate Setup (Web)</button>
+                <button type="button" id="qrBtn" style="margin-top: 10px; background-color: #4CAF50;">Generate QR Mandate</button>
+                <button type="button" id="upiCollectBtn" style="margin-top: 10px; background-color: #9C27B0;">Setup Mandate via UPI ID</button>
+            </div>
+        </form>
+
+        <div id="responseContainer" class="hidden">
+            <h3>Response from Backend</h3>
+            <pre id="jsonResponse"></pre>
+            <p id="redirectText">The backend generated the payload. Redirecting to PayU...</p>
+            <div id="qrCodeContainer" style="display: none; text-align: center; margin-top: 20px;">
+                <h4>Scan this QR to setup mandate:</h4>
+                <img id="qrImage" src="" alt="QR Code" style="border: 1px solid #ccc; padding: 10px; border-radius: 8px;">
+                <p id="qrIntentText" style="word-break: break-all; font-size: 12px; margin-top: 10px; font-family: monospace;"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+    <script src="endpoints.js"></script>
+    <script src="logic.js"></script>
+</body>
+</html>
+
+================================================================================
+FILE: test_qr.js
+DESC: Standalone Node.js QR generation test
+================================================================================
+
+const QRCode = require('qrcode');
+const str = "upi://pay?pa=jojoapp.QR.payu@indus&pn=NAVKAR EVENTS PRIVATE LIMITED&tr=31168101599";
+QRCode.toDataURL(str, { width: 250, margin: 2 }, function (err, url) {
+    if (err) console.error("Error:", err);
+    else console.log("Success! URL starts with:", url.substring(0, 30));
+});
+
+================================================================================
+  END OF FILE
+================================================================================

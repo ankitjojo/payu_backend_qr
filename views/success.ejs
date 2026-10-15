@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        .success-box {
+            text-align: center;
+            padding: 30px;
+            background: #e8f5e9;
+            border: 1px solid #4CAF50;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .success-box h1 {
+            color: #4CAF50;
+            margin-top: 0;
+        }
+        pre {
+            text-align: left;
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-box">
+            <h1>✅ Payment Successful</h1>
+            <p>Your transaction was completed successfully!</p>
+        </div>
+
+        <h3>Transaction Response Details</h3>
+        <p>The following JSON payload was received from PayU:</p>
+        <pre><%= JSON.stringify(data, null, 4) %></pre>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="/" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 4px;">Start New Transaction</a>
+        </div>
+    </div>
+</body>
+</html>
