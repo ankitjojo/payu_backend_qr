@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { PaymentService } from '../../services/payment.service';
 import { validateReverseHash } from '../../utils/hash.util';
+import { detectDevice, getSupportedUpiApps } from '../../utils/upi.util';
 import { logger } from '../../utils/logger.util';
 import fs from 'fs';
 import path from 'path';
@@ -41,14 +42,15 @@ export class PaymentController {
 
   public initiateMandate = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { amount, productinfo, firstname, email, phone, siDetails } = req.body;
+      const { amount, productinfo, firstname, email, phone, paymentType, siDetails } = req.body;
 
-      const payload = this.paymentService.initiateMandate(
+      const payload = this.paymentService.initiatePayment(
         amount,
         productinfo,
         firstname,
         email,
         phone,
+        paymentType,
         siDetails,
       );
 
@@ -128,31 +130,178 @@ export class PaymentController {
     }
   };
 
-  public generateUpiCollect = async (req: Request, res: Response, next: NextFunction) => {
+  public generateUpiIntent = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { amount, productinfo, firstname, email, phone, vpa, siDetails } = req.body;
+      const { amount, productinfo, firstname, email, phone, paymentType, siDetails } = req.body ?? {};
+      const amountString = typeof amount === 'number' ? String(amount) : amount;
+      if (
+        typeof amountString !== 'string' ||
+        !/^\d+(\.\d{1,2})?$/.test(amountString) ||
+        !Number.isFinite(Number(amountString)) ||
+        Number(amountString) <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be positive with at most two decimal places',
+        });
+      }
+      if (
+        ![productinfo, firstname, email, phone].every(
+          value => typeof value === 'string' && value.trim().length > 0 && !value.includes('|'),
+        ) ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        !/^\+?[0-9]{7,15}$/.test(phone)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Valid productinfo, firstname, email and phone are required',
+        });
+      }
 
-      const payload = await this.paymentService.generateUpiCollectMandate(
-        amount,
+      const deviceInfo = req.get('user-agent') || 'Mobile Web App';
+      const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+      const payload = await this.paymentService.generateUpiIntent({
+        amount: amountString,
         productinfo,
         firstname,
         email,
         phone,
-        vpa,
+        paymentType,
         siDetails,
-      );
+        s2s_client_ip: clientIp,
+        s2s_device_info: deviceInfo,
+      });
+
+      const payuResponse = payload.payuResponse;
+      if (
+        payuResponse &&
+        typeof payuResponse === 'object' &&
+        'status' in payuResponse &&
+        ['failed', 'failure', '0'].includes(String(payuResponse.status).toLowerCase())
+      ) {
+        return res.status(502).json({
+          success: false,
+          error: 'PayU rejected the UPI intent request. See data for details.',
+          data: payuResponse,
+          txnid: payload.txnid,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        txnid: payload.txnid,
+        paymentType: payload.paymentType,
+        intentUri: payload.intentUri,
+        device: payload.device,
+        supportedApps: payload.supportedApps,
+        data: payload.payuResponse,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public getSupportedUpiApps = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const intent =
+        typeof req.query.intent === 'string'
+          ? req.query.intent
+          : 'upi://pay?pa=demo@payu&pn=Merchant&am=1.00&cu=INR';
+      const userAgent = req.get('user-agent') || '';
+      const device = detectDevice(userAgent);
+      const supportedApps = getSupportedUpiApps(intent, userAgent);
+
+      return res.status(200).json({
+        success: true,
+        device,
+        supportedApps,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public validateVpa = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { vpa } = req.body ?? {};
+      if (typeof vpa !== 'string' || !vpa.trim()) {
+        return res.status(400).json({ success: false, error: 'A valid vpa string is required' });
+      }
+      const result = await this.paymentService.validateVPA(vpa);
+      return res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public generateUpiCollect = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { amount, productinfo, firstname, email, phone, vpa, paymentType, siDetails } = req.body ?? {};
+      const amountString = typeof amount === 'number' ? String(amount) : amount;
+      if (
+        typeof amountString !== 'string' ||
+        !/^\d+(\.\d{1,2})?$/.test(amountString) ||
+        !Number.isFinite(Number(amountString)) ||
+        Number(amountString) <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'amount must be positive with at most two decimal places',
+        });
+      }
+
+      if (
+        ![productinfo, firstname, email, phone, vpa].every(
+          val => typeof val === 'string' && val.trim().length > 0 && !val.includes('|'),
+        ) ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+        !/^\+?[0-9]{7,15}$/.test(phone)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Valid productinfo, firstname, email, phone, and vpa are required',
+        });
+      }
+
+      // Validate VPA with PayU / format
+      const vpaCheck = await this.paymentService.validateVPA(vpa);
+      if (!vpaCheck.isValid) {
+        return res.status(400).json({
+          success: false,
+          error: vpaCheck.message || 'Invalid VPA handle',
+          vpaDetails: vpaCheck,
+        });
+      }
+
+      const payload = await this.paymentService.generateUpiCollect({
+        amount: amountString,
+        productinfo,
+        firstname,
+        email,
+        phone,
+        vpa: vpa.trim(),
+        paymentType,
+        siDetails,
+      });
 
       res.status(200).json({
         success: true,
         data: payload.payuResponse,
         txnid: payload.txnid,
+        vpa: payload.vpa,
+        paymentType: payload.paymentType,
+        vpaValidation: vpaCheck,
       });
     } catch (error: any) {
-      console.error(error);
+      logger.error('Error generating UPI Collect: ' + error.message);
       res.status(500).json({
         success: false,
         error: error.message,
-        payuData: error.response?.data
+        payuData: error.response?.data,
       });
     }
   };

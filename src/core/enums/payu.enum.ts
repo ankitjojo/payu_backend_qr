@@ -3,6 +3,7 @@ export enum PayUCommand {
   VERIFY_PAYMENT = 'verify_payment',
   CHECK_PAYMENT = 'check_payment',
   CANCEL_REFUND_TRANSACTION = 'cancel_refund_transaction',
+  VALIDATE_VPA = 'validateVPA',
 }
 
 export enum PayUSubventionType {

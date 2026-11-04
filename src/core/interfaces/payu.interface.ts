@@ -32,3 +32,53 @@ export interface PayUOneTimeQRDetails {
   s2s_client_ip: string;
   s2s_device_info: string;
 }
+
+export interface DeviceInfo {
+  isMobile: boolean;
+  os: 'android' | 'ios' | 'desktop' | 'other';
+  browser: string;
+}
+
+export interface UpiAppInfo {
+  id: string;
+  name: string;
+  shortName: string;
+  packageName?: string | undefined;
+  scheme: string;
+  deepLink: string;
+  androidIntent?: string | undefined;
+  recommendedLaunchUrl: string;
+  color: string;
+  bgColor: string;
+  isUniversal?: boolean | undefined;
+}
+
+export interface PayUUpiIntentRequest {
+  amount: string;
+  productinfo: string;
+  firstname: string;
+  email: string;
+  phone: string;
+  paymentType?: 'subscription' | 'one-time';
+  siDetails?: PayUSIDetails;
+  s2s_client_ip: string;
+  s2s_device_info: string;
+}
+
+export interface PayUUpiIntentResult {
+  txnid: string;
+  paymentType: 'subscription' | 'one-time';
+  intentUri: string | null;
+  supportedApps: UpiAppInfo[];
+  device: DeviceInfo;
+  payuResponse: any;
+}
+
+export interface PayUValidateVPAResponse {
+  status: string;
+  vpa: string;
+  isVPAValid: number; // 1 for valid, 0 for invalid
+  isVpaValid?: number;
+  payerAccountName?: string;
+  msg?: string;
+}

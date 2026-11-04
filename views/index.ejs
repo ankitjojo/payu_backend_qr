@@ -3,118 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PayU Payment Testing</title>
+    <title>PayU Payment Hub</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        fieldset {
-            min-width: 0;
-        }
-
-        legend, button, h1, h3, h4, p {
-            overflow-wrap: anywhere;
-        }
-
-        input, select {
-            min-width: 0;
-            max-width: 100%;
-            font-size: 16px;
-        }
-
-        #qrImage {
-            box-sizing: border-box;
-            max-width: 100%;
-            height: auto;
-            margin-inline: auto;
-        }
-
-        @media (max-width: 480px) {
-            body { padding: 12px; }
-            .container { padding: 16px; }
-            fieldset, #responseContainer { padding: 10px; }
-            button { padding: 12px; }
-        }
-    </style>
 </head>
 <body>
     <div class="container">
-        <h1>PayU Payment Testing</h1>
-        <p>Test a subscription mandate or a one-time UPI QR payment.</p>
-        
-        <form id="mandateForm">
-            <div class="form-group">
-                <label for="paymentType">Payment Type</label>
-                <select id="paymentType">
-                    <option value="subscription">Subscription mandate</option>
-                    <option value="one-time">One-time payment</option>
-                </select>
+        <!-- Header -->
+        <div class="header">
+            <h1>🚀 PayU Payment Hub</h1>
+            <p class="subtitle">Complete checkout testing for Web, Mobile, UPI Intent, Dynamic QR & UPI Collect</p>
+            <div class="tunnel-pill" id="tunnelPill">
+                🌐 <span id="tunnelHost">https://42nxvjgc-4000.inc1.devtunnels.ms</span>
             </div>
-            <div class="form-group">
-                <label for="amount">Amount (INR)</label>
-                <input type="text" id="amount" value="1.00" required>
-            </div>
-            <div class="form-group">
-                <label for="productinfo">Product Info</label>
-                <input type="text" id="productinfo" value="Subscription Plan A" required>
-            </div>
-            <div class="form-group">
-                <label for="firstname">First Name</label>
-                <input type="text" id="firstname" value="John" required>
-            </div>
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" value="john@example.com" required>
-            </div>
-            <div class="form-group">
-                <label for="phone">Phone</label>
-                <input type="text" id="phone" value="9876543210" required>
+        </div>
+
+        <form id="paymentJourneyForm">
+            <!-- Step 1: Select Payment Method -->
+            <div class="step-section">
+                <div class="step-title">
+                    <span class="step-num">1</span>
+                    Select Payment Method
+                </div>
+                <div class="methods-grid" id="methodsGrid">
+                    <div class="method-card active" data-method="upi-intent">
+                        <span class="badge">Recommended</span>
+                        <div class="method-icon">📱</div>
+                        <div class="method-name">UPI Intent</div>
+                        <div class="method-desc">Direct launch in GPay, PhonePe, Paytm, CRED & UPI apps</div>
+                    </div>
+                    <div class="method-card" data-method="upi-qr">
+                        <span class="badge">Desktop</span>
+                        <div class="method-icon">📲</div>
+                        <div class="method-name">Dynamic QR</div>
+                        <div class="method-desc">Generate instant scannable UPI QR on screen</div>
+                    </div>
+                    <div class="method-card" data-method="upi-collect">
+                        <span class="badge">Push Request</span>
+                        <div class="method-icon">🆔</div>
+                        <div class="method-name">UPI Collect (VPA)</div>
+                        <div class="method-desc">Enter UPI ID to receive a collect notification in app</div>
+                    </div>
+                    <div class="method-card" data-method="payu-hosted">
+                        <span class="badge">Hosted</span>
+                        <div class="method-icon">💳</div>
+                        <div class="method-name">PayU Checkout</div>
+                        <div class="method-desc">Cards, NetBanking & standard PayU hosted page</div>
+                    </div>
+                </div>
+                <input type="hidden" id="selectedMethod" value="upi-intent">
             </div>
 
-            <div class="form-group">
-                <label for="vpa">UPI ID (VPA) for Collect</label>
-                <input type="text" id="vpa" value="success@ybl" placeholder="e.g. user@upi">
+            <!-- Step 2: Select Payment Type -->
+            <div class="step-section">
+                <div class="step-title">
+                    <span class="step-num">2</span>
+                    Select Payment Type
+                </div>
+                <div class="type-selector" id="typeSelector">
+                    <div class="type-card active" data-type="one-time">
+                        <div class="type-title">⚡ One-Time Payment</div>
+                        <div class="type-desc">Single instant debit transaction</div>
+                    </div>
+                    <div class="type-card" data-type="subscription">
+                        <div class="type-title">🔄 Subscription Mandate</div>
+                        <div class="type-desc">Recurring standing instruction (Autopay)</div>
+                    </div>
+                </div>
+                <input type="hidden" id="selectedType" value="one-time">
             </div>
 
-            <fieldset id="siDetailsFields">
-                <legend>SI Details (Standing Instruction)</legend>
-                <div class="form-group">
-                    <label for="billingAmount">Billing Amount</label>
-                    <input type="text" id="billingAmount" value="2.00" required>
+            <!-- Step 3: Enter Payment Details -->
+            <div class="step-section">
+                <div class="step-title">
+                    <span class="step-num">3</span>
+                    Enter Payment Details
                 </div>
-                <div class="form-group">
-                    <label for="billingCycle">Billing Cycle</label>
-                    <select id="billingCycle">
-                        <option value="MONTHLY">Monthly</option>
-                        <option value="YEARLY">Yearly</option>
-                        <option value="WEEKLY">Weekly</option>
-                        <option value="DAILY">Daily</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="paymentStartDate">Start Date</label>
-                    <input type="date" id="paymentStartDate" required>
-                </div>
-                <div class="form-group">
-                    <label for="paymentEndDate">End Date</label>
-                    <input type="date" id="paymentEndDate" required>
-                </div>
-            </fieldset>
 
-            <div class="buttons">
-                <button type="submit" id="submitBtn">Initiate Mandate Setup (Web)</button>
-                <button type="button" id="qrBtn" style="margin-top: 10px; background-color: #4CAF50;">Generate QR Mandate</button>
-                <button type="button" id="upiCollectBtn" style="margin-top: 10px; background-color: #9C27B0;">Setup Mandate via UPI ID</button>
+                <!-- UPI VPA Field (Visible only for UPI Collect) -->
+                <div class="vpa-wrapper hidden" id="vpaSection">
+                    <label for="vpa">UPI ID / VPA Handle <span style="color:#e53e3e;">*</span></label>
+                    <div class="vpa-input-group">
+                        <input type="text" id="vpa" value="success@ybl" placeholder="e.g. success@ybl or user@okhdfcbank">
+                        <button type="button" id="verifyVpaBtn" class="verify-btn">🔍 Verify UPI ID</button>
+                    </div>
+                    <div id="vpaStatus" class="vpa-status-text">💡 Test handle: <code>success@ybl</code></div>
+                </div>
+
+                <!-- Common Order & Customer Fields -->
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="amount">Amount (INR) <span style="color:#e53e3e;">*</span></label>
+                        <input type="text" id="amount" value="1.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="productinfo">Product Info <span style="color:#e53e3e;">*</span></label>
+                        <input type="text" id="productinfo" value="Subscription Plan A" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="firstname">First Name <span style="color:#e53e3e;">*</span></label>
+                        <input type="text" id="firstname" value="John" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email <span style="color:#e53e3e;">*</span></label>
+                        <input type="email" id="email" value="john@example.com" required>
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="phone">Phone <span style="color:#e53e3e;">*</span></label>
+                        <input type="text" id="phone" value="9876543210" required>
+                    </div>
+                </div>
+
+                <!-- Standing Instruction Details (Visible only for Subscription) -->
+                <fieldset id="siDetailsFields" class="hidden">
+                    <legend>Standing Instruction (SI / Mandate) Parameters</legend>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="billingAmount">Billing Max Amount (INR) <span style="color:#e53e3e;">*</span></label>
+                            <input type="text" id="billingAmount" value="2.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="billingCycle">Billing Cycle</label>
+                            <select id="billingCycle">
+                                <option value="MONTHLY" selected>Monthly</option>
+                                <option value="YEARLY">Yearly</option>
+                                <option value="WEEKLY">Weekly</option>
+                                <option value="DAILY">Daily</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="paymentStartDate">Start Date <span style="color:#e53e3e;">*</span></label>
+                            <input type="date" id="paymentStartDate">
+                        </div>
+                        <div class="form-group">
+                            <label for="paymentEndDate">End Date <span style="color:#e53e3e;">*</span></label>
+                            <input type="date" id="paymentEndDate">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Primary Submit Button -->
+                <button type="submit" id="mainPayBtn" class="primary-btn">
+                    📱 Pay via UPI Intent (One-Time)
+                </button>
             </div>
         </form>
 
+        <!-- Journey Response & Execution Output -->
         <div id="responseContainer" class="hidden">
-            <h3>Response from Backend</h3>
-            <pre id="jsonResponse"></pre>
-            <p id="redirectText">The backend generated the payload. Redirecting to PayU...</p>
-            <div id="qrCodeContainer" style="display: none; text-align: center; margin-top: 20px;">
-                <h4 id="qrHeading">Scan this QR to setup mandate:</h4>
-                <img id="qrImage" src="" alt="QR Code" style="border: 1px solid #ccc; padding: 10px; border-radius: 8px;">
-                <p id="qrIntentText" style="word-break: break-all; font-size: 12px; margin-top: 10px; font-family: monospace;"></p>
+            <!-- UPI Collect Push Notification Alert Box -->
+            <div id="collectAlertBox" class="collect-alert hidden">
+                <div class="collect-alert-icon">🔔</div>
+                <div class="collect-alert-title">UPI Collect Request Sent!</div>
+                <p class="collect-alert-desc">
+                    A payment request has been sent to <span id="collectTargetVpa" class="collect-alert-vpa"></span>.
+                    <br>
+                    Please open your UPI app on your phone, accept the request of <strong>₹<span id="collectTargetAmount"></span></strong>, and enter your UPI PIN.
+                </p>
             </div>
+
+            <!-- UPI Intent App Chooser Box -->
+            <div id="upiIntentContainer" class="hidden" style="margin-top: 16px;">
+                <div id="deviceBadge" class="device-badge"></div>
+                <h4 id="intentHeading" style="margin: 0 0 6px 0;">Select a UPI App to Pay:</h4>
+                <p style="font-size: 13px; color: #586069; margin: 0 0 12px 0;">Tap your installed UPI app to launch it directly on this mobile device.</p>
+                <div id="upiAppsGrid" class="upi-apps-grid"></div>
+                <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" id="copyIntentBtn" class="secondary-btn" style="flex: 1; min-width: 130px;">📋 Copy UPI Link</button>
+                    <button type="button" id="toggleQrFallbackBtn" class="secondary-btn" style="flex: 1; min-width: 130px;">🔄 Toggle QR Code</button>
+                </div>
+            </div>
+
+            <!-- QR Code Display Box -->
+            <div id="qrCodeContainer" class="hidden" style="text-align: center; margin-top: 20px;">
+                <h4 id="qrHeading" style="margin: 0 0 10px 0;">Scan this QR with any UPI App:</h4>
+                <img id="qrImage" src="" alt="QR Code" style="border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; background: #fff;">
+                <p id="qrIntentText" style="word-break: break-all; font-size: 11px; margin-top: 10px; font-family: monospace; color: #718096;"></p>
+            </div>
+
+            <!-- Status Notice (Dynamic Polling) -->
+            <div id="paymentStatusNoticeContainer" style="margin-top: 16px;"></div>
+
+            <!-- JSON Debug Output (Collapsible) -->
+            <details style="margin-top: 16px;">
+                <summary style="font-size: 12px; font-weight: 600; color: #718096; cursor: pointer;">Show Backend Response Payload</summary>
+                <pre id="jsonResponse" style="margin-top: 8px;"></pre>
+            </details>
         </div>
     </div>
 

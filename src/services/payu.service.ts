@@ -146,6 +146,85 @@ export class PayUService {
     return await HttpHelper.postForm(payuConfig.endpoints.paymentUrl, payload);
   }
 
+  public async generateOneTimeUpiCollectS2S(
+    txnid: string,
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    vpa: string,
+    surl: string,
+    furl: string,
+  ): Promise<any> {
+    const hash = generateHashForPayment(txnid, amount, productinfo, firstname, email);
+
+    const payload: any = {
+      key: payuConfig.merchantKey,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      pg: 'UPI',
+      bankcode: 'UPI',
+      vpa,
+      txn_s2s_flow: 1,
+      hash,
+    };
+
+    logger.info(`Generating S2S One-Time UPI Collect for txnid: ${txnid} to VPA: ${vpa}`);
+    return await HttpHelper.postForm(payuConfig.endpoints.paymentUrl, payload);
+  }
+
+  public generateOneTimePaymentPayload(
+    txnid: string,
+    amount: string,
+    productinfo: string,
+    firstname: string,
+    email: string,
+    phone: string,
+    surl: string,
+    furl: string,
+  ): Record<string, string> {
+    const hash = generateHashForPayment(txnid, amount, productinfo, firstname, email);
+    return {
+      key: payuConfig.merchantKey,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      phone,
+      surl,
+      furl,
+      hash,
+      service_provider: 'payu_paisa',
+      url: payuConfig.endpoints.paymentUrl,
+    };
+  }
+
+  /**
+   * Validates a UPI VPA with PayU PostService API
+   */
+  public async validateVPA(vpa: string): Promise<any> {
+    const command = PayUCommand.VALIDATE_VPA;
+    const hash = generateHashForCommand(command, vpa);
+
+    const data = {
+      key: payuConfig.merchantKey,
+      command,
+      var1: vpa,
+      hash,
+    };
+
+    logger.info(`Validating VPA with PayU: ${vpa}`);
+    return await HttpHelper.postForm(payuConfig.endpoints.apiUrl, data);
+  }
+
   /**
    * Verifies a transaction status with PayU
    */
