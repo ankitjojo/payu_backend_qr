@@ -89,6 +89,45 @@ export class PaymentController {
     }
   };
 
+  public generateOneTimeQR = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { amount, productinfo, firstname, email, phone } = req.body ?? {};
+      const amountString = typeof amount === 'number' ? String(amount) : amount;
+      if (typeof amountString !== 'string' || !/^\d+(\.\d{1,2})?$/.test(amountString) ||
+          !Number.isFinite(Number(amountString)) || Number(amountString) <= 0) {
+        return res.status(400).json({ success: false, error: 'amount must be positive with at most two decimal places' });
+      }
+      if (![productinfo, firstname, email, phone].every(
+        value => typeof value === 'string' && value.trim().length > 0 && !value.includes('|'),
+      ) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\+?[0-9]{7,15}$/.test(phone)) {
+        return res.status(400).json({ success: false, error: 'Valid productinfo, firstname, email and phone are required' });
+      }
+      const deviceInfo = req.get('user-agent');
+      if (!req.ip || !deviceInfo?.trim()) {
+        return res.status(400).json({ success: false, error: 'Client IP and User-Agent are required' });
+      }
+
+      const payload = await this.paymentService.generateOneTimeQR({
+        amount: amountString, productinfo, firstname, email, phone,
+        s2s_client_ip: req.ip,
+        s2s_device_info: deviceInfo,
+      });
+      const payuResponse = payload.payuResponse;
+      if (payuResponse && typeof payuResponse === 'object' && 'status' in payuResponse &&
+          ['failed', 'failure', '0'].includes(String(payuResponse.status).toLowerCase())) {
+        return res.status(502).json({
+          success: false,
+          error: 'PayU rejected the QR payment request. See data for details.',
+          data: payuResponse,
+          txnid: payload.txnid,
+        });
+      }
+      return res.status(200).json({ success: true, data: payload.payuResponse, txnid: payload.txnid });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   public generateUpiCollect = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { amount, productinfo, firstname, email, phone, vpa, siDetails } = req.body;

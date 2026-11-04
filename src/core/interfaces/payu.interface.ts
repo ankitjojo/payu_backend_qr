@@ -22,3 +22,13 @@ export interface PayUSIDetails {
   paymentStartDate: string; // YYYY-MM-DD
   paymentEndDate: string; // YYYY-MM-DD
 }
+
+export interface PayUOneTimeQRDetails {
+  amount: string;
+  productinfo: string;
+  firstname: string;
+  email: string;
+  phone: string;
+  s2s_client_ip: string;
+  s2s_device_info: string;
+}

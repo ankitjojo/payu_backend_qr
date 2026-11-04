@@ -1,5 +1,5 @@
 import { payuConfig } from '../config/payu.config';
-import { PayUMandateRequest, PayUSIDetails } from '../core/interfaces/payu.interface';
+import { PayUMandateRequest, PayUSIDetails, PayUOneTimeQRDetails } from '../core/interfaces/payu.interface';
 import { generateHashForPayment, generateHashForCommand } from '../utils/hash.util';
 import { HttpHelper } from '../utils/http.util';
 import { PayUCommand } from '../core/enums/payu.enum';
@@ -84,6 +84,27 @@ export class PayUService {
 
     logger.info(`Generating S2S QR Mandate for txnid: ${txnid}`);
     return await HttpHelper.postForm(payuConfig.endpoints.paymentUrl, payload);
+  }
+
+  public async generateOneTimeQRS2S(
+    txnid: string,
+    details: PayUOneTimeQRDetails,
+    surl: string,
+    furl: string,
+  ): Promise<unknown> {
+    const { amount, productinfo, firstname, email, phone, s2s_client_ip, s2s_device_info } = details;
+    const payload = {
+      key: payuConfig.merchantKey,
+      txnid, amount, productinfo, firstname, email, phone, surl, furl,
+      s2s_client_ip, s2s_device_info,
+      pg: 'UPI',
+      bankcode: 'INTENT',
+      txn_s2s_flow: '4',
+      // Use the default payment API hash sequence for this non-mandate request.
+      // Do not inherit api_version=7 from the subscription integration.
+      hash: generateHashForPayment(txnid, amount, productinfo, firstname, email),
+    };
+    return HttpHelper.postForm(payuConfig.endpoints.paymentUrl, payload);
   }
 
   public async generateUpiCollectS2S(

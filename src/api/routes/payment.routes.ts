@@ -9,6 +9,7 @@ paymentRoutes.post('/initiate-mandate', paymentController.initiateMandate);
 
 // API to generate QR payload for PayU
 paymentRoutes.post('/generate-qr', paymentController.generateQR);
+paymentRoutes.post('/generate-qr-one-time', paymentController.generateOneTimeQR);
 paymentRoutes.post('/generate-upi-collect', paymentController.generateUpiCollect);
 
 // Webhook/Callback routes for PayU to post back the result

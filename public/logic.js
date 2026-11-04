@@ -17,6 +17,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (paymentType.value === 'one-time') {
+            qrBtn.click();
+            return;
+        }
         
         submitBtn.disabled = true;
         submitBtn.textContent = 'Processing...';
@@ -71,10 +75,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const qrBtn = document.getElementById('qrBtn');
 
+    const paymentType = document.getElementById('paymentType');
+    const siDetailsFields = document.getElementById('siDetailsFields');
+    const collectButton = document.getElementById('upiCollectBtn');
+    const actionButtons = [submitBtn, qrBtn, collectButton];
+
+    function resetPaymentDisplay() {
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = null;
+        responseContainer.classList.add('hidden');
+        document.getElementById('qrCodeContainer').style.display = 'none';
+        document.getElementById('qrImage').removeAttribute('src');
+        document.getElementById('qrIntentText').textContent = '';
+        document.getElementById('paymentStatusNotice')?.remove();
+    }
+
+    paymentType.addEventListener('change', () => {
+        const oneTime = paymentType.value === 'one-time';
+        siDetailsFields.hidden = oneTime;
+        siDetailsFields.disabled = oneTime;
+        document.getElementById('vpa').parentElement.hidden = oneTime;
+        submitBtn.hidden = oneTime;
+        collectButton.hidden = oneTime;
+        qrBtn.textContent = oneTime ? 'Generate One-Time Payment QR' : 'Generate QR Mandate';
+        resetPaymentDisplay();
+    });
+
     qrBtn.addEventListener('click', async (e) => {
         e.preventDefault();
         
-        qrBtn.disabled = true;
+        if (!form.reportValidity()) return;
+        const oneTime = paymentType.value === 'one-time';
+        resetPaymentDisplay();
+        actionButtons.forEach(button => { button.disabled = true; });
+        paymentType.disabled = true;
         qrBtn.textContent = 'Processing...';
 
         // Gather data
@@ -94,9 +128,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
+        if (oneTime) delete payload.siDetails;
+
         try {
             // Call backend API
-            const response = await fetch(endpoints.generateQR, {
+            const response = await fetch(oneTime ? endpoints.generateOneTimeQR : endpoints.generateQR, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -106,24 +142,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const result = await response.json();
             
-            if (result.success) {
+            if (response.ok && result.success) {
                 // Show JSON response for debugging
                 responseContainer.classList.remove('hidden');
-                jsonResponse.textContent = JSON.stringify(result.data, null, 2);
+                jsonResponse.textContent = JSON.stringify(result, null, 2);
 
                 const payuResponse = result.data;
-                const intentStr = (payuResponse && payuResponse.result) ? (payuResponse.result.intentURIData || payuResponse.result.intentUrl || payuResponse.result.qrString) : null;
+                const rawIntent = payuResponse?.result?.intentURIData || payuResponse?.result?.intentUrl || payuResponse?.result?.qrString;
+                const intentStr = buildUpiPaymentUri(rawIntent);
                 
                 if (intentStr) {
                     const redirectText = document.getElementById('redirectText');
                     if (redirectText) redirectText.style.display = 'none';
                     
                     document.getElementById('qrCodeContainer').style.display = 'block';
+                    document.getElementById('qrImage').style.display = 'block';
+                    document.getElementById('qrHeading').textContent = oneTime
+                        ? 'Scan this QR to make a one-time payment:' : 'Scan this QR to setup mandate:';
                     
                     // Generate QR image securely and instantly on the frontend
                     QRCode.toDataURL(intentStr, { width: 250, margin: 2 }, function (err, url) {
                         if (err) {
                             console.error('QR Generation Error:', err);
+                            alert('Unable to render the QR code. Please try again.');
                             return;
                         }
                         document.getElementById('qrImage').src = url;
@@ -132,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Start polling backend verify API until payment is approved or failed
                     const activeTxnid = result.txnid || (payuResponse && payuResponse.metaData && payuResponse.metaData.txnId);
-                    startPolling(activeTxnid, payload.amount);
+                    startPolling(activeTxnid, payload.amount, oneTime);
                 } else if (typeof payuResponse === 'string' && payuResponse.includes('html')) {
                     // Fallback if UPI Intent S2S is not enabled or returns HTML
                     alert('UPI Intent S2S returned checkout HTML. Falling back to PayU Hosted Checkout.');
@@ -141,14 +182,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert('Failed to generate Intent QR. Check JSON response for details.');
                 }
             } else {
-                alert('Failed to generate QR mandate.');
+                responseContainer.classList.remove('hidden');
+                jsonResponse.textContent = JSON.stringify(result, null, 2);
+                document.getElementById('redirectText').style.display = 'none';
+                alert(result.error || result.message || 'Failed to generate payment QR.');
             }
         } catch (error) {
             console.error('Error:', error);
             alert('An error occurred. Check console.');
         } finally {
-            qrBtn.disabled = false;
-            qrBtn.textContent = 'Generate QR Mandate';
+            actionButtons.forEach(button => { button.disabled = false; });
+            paymentType.disabled = false;
+            qrBtn.textContent = oneTime ? 'Generate One-Time Payment QR' : 'Generate QR Mandate';
         }
     });
 
@@ -217,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let pollInterval = null;
 
-    function startPolling(txnid, amount) {
+    function startPolling(txnid, amount, oneTime = false) {
         if (!txnid) return;
         if (pollInterval) clearInterval(pollInterval);
 
@@ -235,7 +280,9 @@ document.addEventListener('DOMContentLoaded', () => {
         statusNotice.style.background = '#e3f2fd';
         statusNotice.style.color = '#0d47a1';
         statusNotice.style.border = '1px solid #90caf9';
-        statusNotice.textContent = '⏳ Waiting for payment... Approve the mandate on your UPI app.';
+        statusNotice.textContent = oneTime
+            ? '⏳ Waiting for payment... Complete the payment in your UPI app.'
+            : '⏳ Waiting for payment... Approve the mandate on your UPI app.';
 
         let attempts = 0;
         const maxAttempts = 100; // ~5 minutes
@@ -307,4 +354,15 @@ function submitPayUForm(payuData) {
     setTimeout(() => {
         form.submit();
     }, 2000);
+}
+
+/** Convert PayU's query-only intent data into a scannable UPI payment URI. */
+function buildUpiPaymentUri(intentData) {
+    if (typeof intentData !== 'string' || !intentData.trim()) return null;
+    const value = intentData.trim();
+    const query = value.replace(/^upi:\/\/pay\?/i, '').replace(/^\?/, '');
+    const params = new URLSearchParams(query);
+    if (!params.get('pa')) return null;
+    // Encode spaces and other reserved characters without encoding query separators.
+    return `upi://pay?${params.toString().replace(/\+/g, '%20')}`;
 }

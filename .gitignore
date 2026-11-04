@@ -33,6 +33,7 @@ coverage/
 scratch.ts
 test_*.js
 *.tsbuildinfo
+sample_mepass.json
 
 # OS / Editor files
 .DS_Store

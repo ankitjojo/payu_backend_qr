@@ -1,5 +1,5 @@
 import { PayUService } from './payu.service';
-import { PayUSIDetails } from '../core/interfaces/payu.interface';
+import { PayUSIDetails, PayUOneTimeQRDetails } from '../core/interfaces/payu.interface';
 import { config } from '../config/index';
 import crypto from 'crypto';
 
@@ -73,6 +73,17 @@ export class PaymentService {
       siDetails,
     );
 
+    return { txnid, payuResponse: result };
+  }
+
+  public async generateOneTimeQR(details: PayUOneTimeQRDetails) {
+    const txnid = 'TxnQR' + crypto.randomBytes(8).toString('hex');
+    const result = await this.payuService.generateOneTimeQRS2S(
+      txnid,
+      details,
+      `${config.checkoutUrl}/api/payments/success`,
+      `${config.checkoutUrl}/api/payments/failure`,
+    );
     return { txnid, payuResponse: result };
   }
 
