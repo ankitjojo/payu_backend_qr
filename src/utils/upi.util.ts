@@ -1,14 +1,18 @@
 import { DeviceInfo, UpiAppInfo } from '../core/interfaces/payu.interface';
 
 /**
- * Normalizes a raw PayU intent string (or complete URI) into a valid upi://pay URI.
+ * Normalizes a raw PayU intent string (or complete URI) into a UPI URI, preserving complete payment and mandate URIs.
  */
 export function buildUpiPaymentUri(intentData: string): string | null {
   if (typeof intentData !== 'string' || !intentData.trim()) return null;
   const value = intentData.trim();
-  const query = value.replace(/^upi:\/\/pay\?/i, '').replace(/^\?/, '');
+  const prefix = value.match(/^upi:\/\/(pay|mandate)\?/i);
+  if (!prefix && /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  const query = (prefix ? value.slice(prefix[0].length) : value).replace(/^\?/, '');
   const params = new URLSearchParams(query);
   if (!params.get('pa')) return null;
+  // Keep mandate URIs intact; retain existing normalization for one-time payments.
+  if (prefix?.[1]?.toLowerCase() === 'mandate') return value;
   return `upi://pay?${params.toString().replace(/\+/g, '%20')}`;
 }
 
@@ -17,7 +21,7 @@ export function buildUpiPaymentUri(intentData: string): string | null {
  */
 export function extractUpiQuery(upiUri: string): string {
   const normalized = buildUpiPaymentUri(upiUri) || upiUri;
-  return normalized.replace(/^upi:\/\/pay\?/i, '').replace(/^\?/, '');
+  return normalized.replace(/^upi:\/\/(?:pay|mandate)\?/i, '').replace(/^\?/, '');
 }
 
 /**
@@ -145,13 +149,19 @@ export function getSupportedUpiApps(upiUri: string, userAgent: string = ''): Upi
   const query = extractUpiQuery(upiUri);
   const device = detectDevice(userAgent);
 
-  return UPI_APP_DEFINITIONS.map(app => {
+  const action = /^upi:\/\/mandate\?/i.test(upiUri) ? 'mandate' : 'pay';
+  // App-specific payment schemes are not verified for mandate registration.
+  const apps = action === 'mandate'
+    ? UPI_APP_DEFINITIONS.filter(app => app.isUniversal)
+    : UPI_APP_DEFINITIONS;
+
+  return apps.map(app => {
     let deepLink = `${app.scheme}?${query}`;
     let androidIntent: string | undefined;
 
     if (app.isUniversal) {
-      deepLink = `upi://pay?${query}`;
-      androidIntent = `intent://pay?${query}#Intent;scheme=upi;end`;
+      deepLink = `upi://${action}?${query}`;
+      androidIntent = `intent://${action}?${query}#Intent;scheme=upi;end`;
     } else if (app.packageName) {
       androidIntent = `intent://pay?${query}#Intent;scheme=upi;package=${app.packageName};end`;
     }
@@ -166,7 +176,7 @@ export function getSupportedUpiApps(upiUri: string, userAgent: string = ''): Upi
       name: app.name,
       shortName: app.shortName,
       packageName: app.packageName,
-      scheme: app.scheme,
+      scheme: app.isUniversal ? `upi://${action}` : app.scheme,
       deepLink,
       androidIntent,
       recommendedLaunchUrl,

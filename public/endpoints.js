@@ -11,3 +11,10 @@ const endpoints = {
     generateUpiCollect: `${API_BASE_URL}/payments/generate-upi-collect`,
     verifyPayment: (txnid) => `${API_BASE_URL}/payments/verify/${txnid}`
 };
+
+endpoints.subscription = {
+    mandateStatus: `${API_BASE_URL}/subscriptions/mandate-status`,
+    preDebit: `${API_BASE_URL}/subscriptions/pre-debit`,
+    recurringPayment: `${API_BASE_URL}/subscriptions/recurring-payment`,
+    verifyPayment: `${API_BASE_URL}/subscriptions/verify-payment`,
+};

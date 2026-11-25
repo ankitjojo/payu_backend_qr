@@ -82,3 +82,12 @@ export interface PayUValidateVPAResponse {
   payerAccountName?: string;
   msg?: string;
 }
+
+// ── UPI subscription S2S test operations (postservice commands) ──
+/** What we sent to PayU, the Postman curl of it, and PayU's raw answer. */
+export interface PayUCommandResult<T = any> {
+  command: string;
+  request: Record<string, string>; // key, command, var1, hash (no salt)
+  curl: string;
+  response: T;
+}

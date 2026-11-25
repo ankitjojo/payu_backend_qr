@@ -77,6 +77,8 @@ describe('UPI Intent Service and Controller', () => {
     expect(payload.si).toBe(1);
     expect(payload.bankcode).toBe('INTENT');
     expect(payload.api_version).toBe('7');
+    expect(payload.s2s_client_ip).toBe(mockDetails.s2s_client_ip);
+    expect(payload.s2s_device_info).toBe(mockDetails.s2s_device_info);
   });
 
   it('controller handles generateUpiIntent request and sends json response', async () => {

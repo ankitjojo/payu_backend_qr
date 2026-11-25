@@ -13,4 +13,8 @@ export const config = {
     baseUrl: process.env.PAYU_BASE_URL || 'https://test.payu.in',
   },
   checkoutUrl: process.env.CHECKOUT_URL || `http://localhost:${process.env.PORT || '3000'}`,
+  jojo: {
+    secretKey: process.env.JOJO_SECRET_KEY || '',
+    iv: process.env.JOJO_IV || '',
+  },
 };

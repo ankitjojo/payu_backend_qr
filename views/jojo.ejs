@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jojo Payment – One-Time</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* ── Jojo-specific additions ── */
+        .jojo-header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; border-radius: 10px; padding: 18px 20px; margin-bottom: 24px; }
+        .jojo-header h1 { color: #fff; font-size: 20px; margin: 0 0 4px 0; }
+        .jojo-header p  { color: #a0aec0; font-size: 13px; margin: 0; }
+
+        .method-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .method-tab  { border: 2px solid #e2e8f0; border-radius: 10px; padding: 14px 10px; cursor: pointer; text-align: center; background: #fff; transition: all .2s; user-select: none; }
+        .method-tab:hover { border-color: #cbd5e0; transform: translateY(-1px); }
+        .method-tab.active { border-color: #0288d1; background: #e8f5fe; box-shadow: 0 0 0 2px rgba(2,136,209,.15); }
+        .method-tab .tab-icon  { font-size: 22px; margin-bottom: 5px; }
+        .method-tab .tab-name  { font-size: 13px; font-weight: 700; color: #1a202c; }
+        .method-tab .tab-key   { font-size: 10px; color: #718096; font-family: monospace; margin-top: 3px; }
+
+        .section-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #718096; margin: 0 0 10px 0; display: flex; align-items: center; gap: 6px; }
+        .section-label::before { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+        .section-label::after  { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+
+        .headers-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
+
+        .vpa-row { background: #faf5ff; border: 1px solid #e9d8fd; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+        .vpa-row label { color: #6b46c1; }
+
+        .req-id-row { display: flex; gap: 8px; align-items: flex-end; }
+        .req-id-row input { flex: 1; }
+        .regen-btn { background: #edf2f7; border: 1px solid #cbd5e0; color: #4a5568; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap; transition: background .15s; }
+        .regen-btn:hover { background: #e2e8f0; }
+
+        /* Response area */
+        .response-panel { margin-top: 24px; }
+        .response-tabs  { display: flex; gap: 4px; margin-bottom: 0; flex-wrap: wrap; }
+        .resp-tab { padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #e2e8f0; border-bottom: none; border-radius: 6px 6px 0 0; background: #f7fafc; color: #718096; }
+        .resp-tab.active { background: #fff; color: #1a202c; border-color: #cbd5e0; }
+        .resp-pane { border: 1px solid #cbd5e0; border-radius: 0 6px 6px 6px; background: #fff; padding: 0; display: none; }
+        .resp-pane.active { display: block; }
+        pre.resp-pre { margin: 0; padding: 14px; font-size: 12px; font-family: 'SFMono-Regular', Consolas, monospace; line-height: 1.6; overflow-x: auto; background: #1a202c; color: #e2e8f0; border-radius: 0 6px 6px 6px; min-height: 120px; white-space: pre-wrap; word-break: break-all; }
+
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 12px; }
+        .status-badge.pending { background: #fffbea; color: #b7791f; border: 1px solid #f6d860; }
+        .status-badge.success { background: #e6ffed; color: #22863a; border: 1px solid #acf2bd; }
+        .status-badge.error   { background: #ffeef0; color: #cb2431; border: 1px solid #f97583; }
+
+        .hidden { display: none !important; }
+
+        .back-link { font-size: 13px; color: #0288d1; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 16px; }
+        .back-link:hover { text-decoration: underline; }
+
+        input[type="number"] { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; color: #2d3748; background: #fff; }
+        input[type="number"]:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 3px rgba(0,123,255,.15); }
+
+        .token-box { background: #f0fff4; border: 1px solid #acf2bd; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+        .token-box .token-label { font-size: 11px; font-weight: 700; color: #22863a; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+        .token-box .token-value { font-size: 13px; font-family: monospace; color: #1a202c; word-break: break-all; }
+
+        /* ── Step 2: Process Next ── */
+        .process-next-banner { background: linear-gradient(135deg, #0f766e 0%, #065f46 100%); border-radius: 10px; padding: 16px 20px; margin-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .process-next-banner p { color: #d1fae5; font-size: 13px; margin: 0; }
+        .process-next-banner strong { color: #fff; }
+        .process-next-btn { background: #fff; color: #065f46; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all .2s; white-space: nowrap; }
+        .process-next-btn:hover:not(:disabled) { background: #d1fae5; transform: translateY(-1px); }
+        .process-next-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+        .step2-panel { margin-top: 20px; border: 2px solid #0288d1; border-radius: 10px; padding: 16px; background: #f0f9ff; }
+        .step2-panel h4 { margin: 0 0 14px 0; font-size: 14px; color: #0288d1; display: flex; align-items: center; gap: 6px; }
+
+        .notice-box { padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-top: 12px; }
+        .notice-box.info    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .notice-box.success { background: #e6ffed; color: #22863a; border: 1px solid #acf2bd; }
+        .notice-box.error   { background: #ffeef0; color: #cb2431; border: 1px solid #f97583; }
+
+        .qr-wrap { text-align: center; margin: 10px 0; }
+        .qr-wrap img { border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; background: #fff; max-width: 220px; }
+        .qr-uri  { word-break: break-all; font-size: 11px; margin-top: 8px; font-family: monospace; color: #718096; }
+
+        .apps-divider { font-size: 12px; color: #718096; font-weight: 600; margin: 12px 0 6px; }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 700px;">
+        <a href="/" class="back-link">← Back to PayU Hub</a>
+
+        <div class="jojo-header">
+            <h1>🎮 Jojo Payment Integration</h1>
+            <p>Step 1 → Jojo <strong>/initiate-factory-payment</strong> &nbsp;·&nbsp; Step 2 → PayU direct via backend_payu</p>
+        </div>
+
+        <!-- ══ STEP 1 FORM ══ -->
+        <form id="jojoForm">
+            <p class="section-label">Step 1 — Payment Method</p>
+            <div class="method-tabs">
+                <div class="method-tab active" data-method="upi_intent">
+                    <div class="tab-icon">📱</div>
+                    <div class="tab-name">UPI Intent</div>
+                    <div class="tab-key">upi_intent</div>
+                </div>
+                <div class="method-tab" data-method="upi_qr">
+                    <div class="tab-icon">📲</div>
+                    <div class="tab-name">UPI QR</div>
+                    <div class="tab-key">upi_qr</div>
+                </div>
+                <div class="method-tab" data-method="upi_vpa">
+                    <div class="tab-icon">🆔</div>
+                    <div class="tab-name">UPI VPA</div>
+                    <div class="tab-key">upi_vpa</div>
+                </div>
+            </div>
+            <input type="hidden" id="sPaymentMethod" value="upi_intent">
+
+            <p class="section-label">Request Headers</p>
+            <div class="headers-grid">
+                <div class="form-group">
+                    <label for="hProject">project</label>
+                    <input type="text" id="hProject" value="jojo">
+                </div>
+                <div class="form-group">
+                    <label for="hDeviceType">devicetype</label>
+                    <input type="text" id="hDeviceType" value="JvY99-">
+                </div>
+                <div class="form-group">
+                    <label for="hDeviceVersion">deviceversion</label>
+                    <input type="text" id="hDeviceVersion" value="1.0.0">
+                </div>
+                <div class="form-group">
+                    <label for="hDeviceId">deviceid</label>
+                    <input type="text" id="hDeviceId" value="device_test_12345">
+                </div>
+            </div>
+
+            <p class="section-label">Order Params</p>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="iProviderSkuId">iProviderSkuId <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="iProviderSkuId" value="3xal8Jz0" required>
+                </div>
+                <div class="form-group">
+                    <label for="sPayuPlatform">sPayuPlatform</label>
+                    <select id="sPayuPlatform">
+                        <option value="android" selected>android</option>
+                        <option value="ios">ios</option>
+                        <option value="web">web</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="nAmount">nAmount (INR) <span style="color:#e53e3e">*</span></label>
+                    <input type="number" id="nAmount" value="10" min="1" step="1" required>
+                </div>
+                <div class="form-group">
+                    <label for="sCurrencyCode">sCurrencyCode</label>
+                    <select id="sCurrencyCode">
+                        <option value="INR" selected>INR</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sCountryCode2">sCountryCode2</label>
+                    <input type="text" id="sCountryCode2" value="IN" maxlength="2">
+                </div>
+                <div class="form-group">
+                    <label for="sClientRequestId">sClientRequestId <span style="color:#e53e3e">*</span></label>
+                    <div class="req-id-row">
+                        <input type="text" id="sClientRequestId" value="req_payu_test_0001" required>
+                        <button type="button" class="regen-btn" id="regenIdBtn" title="Generate new ID">↻</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="vpaRow" class="vpa-row hidden">
+                <label for="sVpa">sVpa (UPI Handle) <span style="color:#e53e3e">*</span></label>
+                <input type="text" id="sVpa" value="success@upi" placeholder="e.g. success@upi">
+                <div style="font-size:11px; color:#6b46c1; margin-top:5px;">💡 Test handle: <code>success@upi</code></div>
+            </div>
+
+            <p class="section-label">User Details</p>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="sUserId">sUserId <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="sUserId" value="USR_TEST_1001" required>
+                </div>
+                <div class="form-group">
+                    <label for="sUsername">sUsername <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="sUsername" value="John Doe" required>
+                </div>
+                <div class="form-group">
+                    <label for="sEmail">sEmail <span style="color:#e53e3e">*</span></label>
+                    <input type="email" id="sEmail" value="testuser@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="sPhoneCode">sPhoneCode</label>
+                    <input type="text" id="sPhoneCode" value="+91">
+                </div>
+                <div class="form-group">
+                    <label for="sPhoneNumber">sPhoneNumber <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="sPhoneNumber" value="9876543210" required>
+                </div>
+                <div class="form-group">
+                    <label for="sState">sState</label>
+                    <input type="text" id="sState" value="Maharashtra">
+                </div>
+                <div class="form-group full-width">
+                    <label for="sCity">sCity</label>
+                    <input type="text" id="sCity" value="Mumbai">
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" class="primary-btn" style="background:#1a1a2e;">
+                📡 Initiate upi_intent Payment
+            </button>
+        </form>
+
+        <!-- ══ STEP 1 RESPONSE ══ -->
+        <div id="responsePanel" class="response-panel hidden">
+            <div id="statusBadge" class="status-badge pending">⏳ Pending</div>
+
+            <div id="tokenSummary" class="hidden">
+                <div class="token-box">
+                    <div class="token-label">sToken (session)</div>
+                    <div class="token-value" id="valSToken">—</div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                    <div class="token-box" style="background:#eff6ff; border-color:#bfdbfe;">
+                        <div class="token-label" style="color:#1d4ed8;">sOrderId</div>
+                        <div class="token-value" id="valOrderId">—</div>
+                    </div>
+                    <div class="token-box" style="background:#eff6ff; border-color:#bfdbfe;">
+                        <div class="token-label" style="color:#1d4ed8;">txnid (PayU)</div>
+                        <div class="token-value" id="valTxnId">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="response-tabs">
+                <div class="resp-tab active" data-pane="paneDecrypted" id="tabDecrypted">Decrypted</div>
+                <div class="resp-tab" data-pane="paneResponse">Raw Response</div>
+                <div class="resp-tab" data-pane="paneRequest">Request sent</div>
+            </div>
+            <div id="paneDecrypted" class="resp-pane active">
+                <pre class="resp-pre" id="decryptedJson">—</pre>
+            </div>
+            <div id="paneResponse" class="resp-pane">
+                <pre class="resp-pre" id="responseJson">—</pre>
+            </div>
+            <div id="paneRequest" class="resp-pane">
+                <pre class="resp-pre" id="requestJson">—</pre>
+            </div>
+        </div>
+
+        <!-- ══ STEP 2: PROCESS NEXT ══ -->
+        <div id="processNextBanner" class="process-next-banner hidden">
+            <div>
+                <strong>Step 1 succeeded ✅</strong>
+                <p>Jojo token registered. Now initiate the actual PayU payment using backend_payu direct S2S with your live credentials.</p>
+            </div>
+            <button type="button" class="process-next-btn" id="processNextBtn">
+                🚀 Process Next
+            </button>
+        </div>
+
+        <!-- Step 2 result panel -->
+        <div id="step2Panel" class="step2-panel hidden">
+            <h4>⚡ Step 2 — PayU Direct Payment</h4>
+
+            <!-- UPI Intent: app tiles -->
+            <div id="step2IntentBox" class="hidden">
+                <p style="font-size:13px; font-weight:600; color:#2d3748; margin:0 0 8px 0;">Select a UPI App to Pay:</p>
+                <div id="step2AppsGrid" class="upi-apps-grid"></div>
+                <p class="apps-divider">— or scan QR with any app —</p>
+            </div>
+
+            <!-- QR (intent fallback + upi_qr) -->
+            <div id="step2QrBox" class="qr-wrap hidden">
+                <img id="step2QrImg" src="" alt="UPI QR Code">
+                <p id="step2QrText" class="qr-uri"></p>
+                <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap;">
+                    <button type="button" id="step2CopyBtn" class="secondary-btn" style="font-size:13px;">📋 Copy UPI Link</button>
+                </div>
+            </div>
+
+            <!-- UPI VPA collect notification -->
+            <div id="step2CollectBox" class="collect-alert hidden">
+                <div class="collect-alert-icon">🔔</div>
+                <div class="collect-alert-title">Collect Request Sent!</div>
+                <p class="collect-alert-desc">A payment request was sent to <strong id="step2VpaTarget"></strong>.<br>Open your UPI app and approve it.</p>
+            </div>
+
+            <!-- Status notice -->
+            <div id="step2StatusNotice"></div>
+
+            <!-- Step 2 response JSON -->
+            <details style="margin-top:14px;">
+                <summary style="font-size:12px;font-weight:600;color:#718096;cursor:pointer;">Show Step 2 Backend Response</summary>
+                <pre id="step2Json" style="margin-top:8px;font-size:12px;background:#1a202c;color:#e2e8f0;padding:14px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;min-height:60px;"></pre>
+            </details>
+        </div>
+
+    </div><!-- /container -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
+    <script>
+    (() => {
+        // ─── element refs ───────────────────────────────────────────────────────────
+        const form               = document.getElementById('jojoForm');
+        const submitBtn          = document.getElementById('submitBtn');
+        const methodInput        = document.getElementById('sPaymentMethod');
+        const vpaRow             = document.getElementById('vpaRow');
+        const responsePanel      = document.getElementById('responsePanel');
+        const statusBadge        = document.getElementById('statusBadge');
+        const tokenSummary       = document.getElementById('tokenSummary');
+        const responseJson       = document.getElementById('responseJson');
+        const decryptedJson      = document.getElementById('decryptedJson');
+        const requestJson        = document.getElementById('requestJson');
+        const tabDecrypted       = document.getElementById('tabDecrypted');
+        const regenBtn           = document.getElementById('regenIdBtn');
+        const processNextBanner  = document.getElementById('processNextBanner');
+        const processNextBtn     = document.getElementById('processNextBtn');
+        const step2Panel         = document.getElementById('step2Panel');
+        const step2IntentBox     = document.getElementById('step2IntentBox');
+        const step2AppsGrid      = document.getElementById('step2AppsGrid');
+        const step2QrBox         = document.getElementById('step2QrBox');
+        const step2QrImg         = document.getElementById('step2QrImg');
+        const step2QrText        = document.getElementById('step2QrText');
+        const step2CopyBtn       = document.getElementById('step2CopyBtn');
+        const step2CollectBox    = document.getElementById('step2CollectBox');
+        const step2VpaTarget     = document.getElementById('step2VpaTarget');
+        const step2StatusNotice  = document.getElementById('step2StatusNotice');
+        const step2Json          = document.getElementById('step2Json');
+
+        let reqCounter   = 1;
+        let step1FormData = null;   // saved on successful step 1
+        let step2Poll    = null;    // polling interval handle
+        let currentIntentUri = null;
+
+        // ─── branded UPI app shortcuts (web) ────────────────────────────────────────
+        const STATIC_APPS = [
+            { name: 'PhonePe',    emoji: '💜', bg: '#5f259f' },
+            { name: 'Google Pay', emoji: '🔵', bg: '#1a73e8' },
+            { name: 'Paytm',      emoji: '🔷', bg: '#00BAF2' },
+            { name: 'BHIM UPI',   emoji: '🇮🇳', bg: '#FF6B00' },
+            { name: 'CRED',       emoji: '⚫', bg: '#1a1a1a' },
+        ];
+
+        // ─── helpers ────────────────────────────────────────────────────────────────
+        function buildUpiUri(raw) {
+            if (!raw || typeof raw !== 'string') return null;
+            const v = raw.trim();
+            if (v.startsWith('upi://')) return v;
+            const p = new URLSearchParams(v.replace(/^\?/, ''));
+            return p.get('pa') ? `upi://pay?${p.toString()}` : null;
+        }
+
+        function renderQr(uri) {
+            step2QrBox.classList.remove('hidden');
+            step2QrText.textContent = uri;
+            currentIntentUri = uri;
+            QRCode.toDataURL(uri, { width: 220, margin: 2 }, (err, url) => {
+                if (!err) step2QrImg.src = url;
+            });
+        }
+
+        function updateStep2Notice(text, type = 'info') {
+            step2StatusNotice.innerHTML = `<div class="notice-box ${type}">${text}</div>`;
+        }
+
+        function stopStep2Poll() {
+            if (step2Poll) { clearInterval(step2Poll); step2Poll = null; }
+        }
+
+        function startStep2Poll(txnid, amount) {
+            if (!txnid) return;
+            stopStep2Poll();
+            updateStep2Notice('⏳ Waiting for payment confirmation…', 'info');
+            let attempts = 0;
+            step2Poll = setInterval(async () => {
+                if (++attempts > 120) { stopStep2Poll(); updateStep2Notice('⚠️ Session timed out. Try again.', 'error'); return; }
+                try {
+                    const r = await fetch(`/api/payments/verify/${encodeURIComponent(txnid)}`);
+                    const d = await r.json();
+                    if (d.success && d.status) {
+                        const st = d.status.toLowerCase();
+                        if (st === 'success' || st === 'captured') {
+                            stopStep2Poll();
+                            updateStep2Notice('✅ Payment Successful!', 'success');
+                        } else if (st === 'failure' || st === 'failed') {
+                            stopStep2Poll();
+                            updateStep2Notice('❌ Payment Failed.', 'error');
+                        }
+                    }
+                } catch {}
+            }, 3000);
+        }
+
+        // App icon map for PayU-returned supportedApps
+        const APP_ICONS = {
+            generic: { emoji: '⚡', bg: '#2e7d32', isUniversal: true },
+            gpay:    { emoji: '🔵', bg: '#1a73e8' },
+            phonepe: { emoji: '💜', bg: '#5f259f' },
+            paytm:   { emoji: '🔷', bg: '#00BAF2' },
+            bhim:    { emoji: '🇮🇳', bg: '#005a9c' },
+            cred:    { emoji: '⚫', bg: '#121212' },
+            amazonpay: { emoji: '🟠', bg: '#ff9900' },
+            whatsapp:  { emoji: '🟢', bg: '#25d366' },
+            navi:    { emoji: '🔹', bg: '#0066cc' },
+        };
+
+        function buildStep2IntentUI(intentUri, supportedApps, deviceInfo) {
+            step2IntentBox.classList.remove('hidden');
+            step2AppsGrid.innerHTML = '';
+
+            const isMobileDevice = deviceInfo?.isMobile || /android|iphone|ipad/i.test(navigator.userAgent);
+
+            (supportedApps || []).forEach(app => {
+                // On Android Chrome, intent:// URIs are required; upi:// scheme links silently fail.
+                // PayU provides recommendedLaunchUrl with the correct intent:// format per app.
+                const launchUrl = app.recommendedLaunchUrl || app.androidIntent || app.deepLink || intentUri;
+                const meta = APP_ICONS[app.id] || { emoji: '💳', bg: '#718096' };
+
+                const card = document.createElement('a');
+                card.className = 'upi-app-card' + (meta.isUniversal ? ' universal' : '');
+                card.href = launchUrl;
+                // On mobile: open the intent URL directly (do NOT preventDefault — that blocks app launch)
+                // On desktop: show the QR instead
+                if (!isMobileDevice) {
+                    card.addEventListener('click', e => {
+                        e.preventDefault();
+                        renderQr(intentUri);
+                        updateStep2Notice(`Scan the QR code with ${app.shortName || app.name}.`, 'info');
+                    });
+                }
+                // rel="noreferrer" keeps referrer clean for deep links
+                card.setAttribute('rel', 'noreferrer');
+
+                const icon = document.createElement('div');
+                icon.className = 'upi-app-icon';
+                icon.style.background = app.bgColor || meta.bg;
+                icon.style.color = '#fff';
+                icon.textContent = meta.emoji;
+
+                const lbl = document.createElement('span');
+                lbl.textContent = app.shortName || app.name;
+
+                card.append(icon, lbl);
+                step2AppsGrid.appendChild(card);
+            });
+
+            // Always show QR as fallback below the grid
+            renderQr(intentUri);
+        }
+
+        // ─── copy UPI link ───────────────────────────────────────────────────────────
+        step2CopyBtn.addEventListener('click', () => {
+            if (!currentIntentUri) return;
+            navigator.clipboard?.writeText(currentIntentUri).then(() => {
+                const orig = step2CopyBtn.textContent;
+                step2CopyBtn.textContent = '✅ Copied!';
+                setTimeout(() => { step2CopyBtn.textContent = orig; }, 2000);
+            }).catch(() => { prompt('Copy UPI link (open on Android):', currentIntentUri); });
+        });
+
+        // ─── method tab selection ────────────────────────────────────────────────────
+        document.querySelectorAll('.method-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.method-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                const method = tab.dataset.method;
+                methodInput.value = method;
+                vpaRow.classList.toggle('hidden', method !== 'upi_vpa');
+                submitBtn.textContent = `📡 Initiate ${method} Payment`;
+                responsePanel.classList.add('hidden');
+                processNextBanner.classList.add('hidden');
+                step2Panel.classList.add('hidden');
+                stopStep2Poll();
+            });
+        });
+
+        // ─── regenerate request ID ───────────────────────────────────────────────────
+        regenBtn.addEventListener('click', () => {
+            reqCounter++;
+            document.getElementById('sClientRequestId').value = `req_payu_test_${String(reqCounter).padStart(4, '0')}`;
+        });
+
+        // ─── step 1 response tab switching ──────────────────────────────────────────
+        document.querySelectorAll('.resp-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.resp-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.resp-pane').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.pane).classList.add('active');
+            });
+        });
+
+        // ─── step 1 form submit ──────────────────────────────────────────────────────
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!form.reportValidity()) return;
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Sending…';
+            responsePanel.classList.remove('hidden');
+            tokenSummary.classList.add('hidden');
+            processNextBanner.classList.add('hidden');
+            step2Panel.classList.add('hidden');
+            stopStep2Poll();
+            decryptedJson.textContent = '—';
+            responseJson.textContent  = '—';
+            statusBadge.className = 'status-badge pending';
+            statusBadge.textContent = '⏳ Pending';
+
+            const method = methodInput.value;
+
+            const headers = {
+                'project':       document.getElementById('hProject').value.trim(),
+                'devicetype':    document.getElementById('hDeviceType').value.trim(),
+                'deviceversion': document.getElementById('hDeviceVersion').value.trim(),
+                'deviceid':      document.getElementById('hDeviceId').value.trim(),
+            };
+
+            const body = {
+                iProviderSkuId:   document.getElementById('iProviderSkuId').value.trim(),
+                sPaymentMethod:   method,
+                sPayuPlatform:    document.getElementById('sPayuPlatform').value,
+                sClientRequestId: document.getElementById('sClientRequestId').value.trim(),
+                sCountryCode2:    document.getElementById('sCountryCode2').value.trim(),
+                sCurrencyCode:    document.getElementById('sCurrencyCode').value,
+                nAmount:          Number(document.getElementById('nAmount').value),
+                sUserId:          document.getElementById('sUserId').value.trim(),
+                sUsername:        document.getElementById('sUsername').value.trim(),
+                sEmail:           document.getElementById('sEmail').value.trim(),
+                sPhoneCode:       document.getElementById('sPhoneCode').value.trim(),
+                sPhoneNumber:     document.getElementById('sPhoneNumber').value.trim(),
+                sState:           document.getElementById('sState').value.trim(),
+                sCity:            document.getElementById('sCity').value.trim(),
+            };
+
+            if (method === 'upi_vpa') body.sVpa = document.getElementById('sVpa').value.trim();
+
+            requestJson.textContent = JSON.stringify({ headers, body }, null, 2);
+
+            // Save for step 2
+            step1FormData = {
+                amount:      String(body.nAmount),
+                productinfo: body.iProviderSkuId,
+                firstname:   body.sUsername,
+                email:       body.sEmail,
+                phone:       body.sPhoneNumber,
+                vpa:         body.sVpa || '',
+                method,
+            };
+
+            try {
+                const res  = await fetch('/api/jojo/initiate-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ headers, body }) });
+                const data = await res.json();
+                const isEncrypted = data && typeof data._encrypted === 'string';
+
+                if (isEncrypted) {
+                    if (data._decrypted !== null && data._decrypted !== undefined) {
+                        decryptedJson.textContent = JSON.stringify(data._decrypted, null, 2);
+                        tabDecrypted.textContent  = '🔓 Decrypted';
+                    } else {
+                        const notConfigured = data._decryptionConfigured === false;
+                        decryptedJson.textContent = notConfigured
+                            ? `⚠️  Decryption keys not set.\n\nSet JOJO_SECRET_KEY and JOJO_IV in .env.\n\nEncrypted hex:\n${data._encrypted}`
+                            : `❌ Decryption failed: ${data._decryptError}\n\nEncrypted hex:\n${data._encrypted}`;
+                        tabDecrypted.textContent = notConfigured ? '⚠️ Keys missing' : '❌ Decrypt failed';
+                    }
+                    responseJson.textContent = JSON.stringify({ data: data._encrypted }, null, 2);
+                    const initiateData = data._decrypted?.data?.initiateData;
+                    handleStep1Success(res.ok, initiateData);
+                } else {
+                    decryptedJson.textContent = '— (response was not encrypted)';
+                    tabDecrypted.textContent  = 'Decrypted';
+                    responseJson.textContent  = JSON.stringify(data, null, 2);
+                    const initiateData = data?.data?.initiateData;
+                    handleStep1Success(res.ok, initiateData);
+                }
+            } catch (err) {
+                responseJson.textContent = `Fetch error: ${err.message}\n\nMake sure the Jojo backend is running on port 8000.`;
+                statusBadge.className = 'status-badge error';
+                statusBadge.textContent = '❌ Network Error';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = `📡 Initiate ${method} Payment`;
+            }
+        });
+
+        function handleStep1Success(isOk, initiateData) {
+            if (isOk && initiateData) {
+                const st = (initiateData.sStatus || 'PENDING').toUpperCase();
+                statusBadge.className = 'status-badge pending';
+                statusBadge.textContent = st === 'PENDING' ? '⏳ PENDING — Jojo token ready' : `✅ ${st}`;
+                tokenSummary.classList.remove('hidden');
+                document.getElementById('valSToken').textContent  = initiateData.sToken   || '—';
+                document.getElementById('valOrderId').textContent = initiateData.sOrderId || '—';
+                document.getElementById('valTxnId').textContent   = initiateData.oPayu?.txnid || '—';
+                // Show Process Next banner
+                processNextBanner.classList.remove('hidden');
+            } else if (!isOk) {
+                statusBadge.className = 'status-badge error';
+                statusBadge.textContent = '❌ Step 1 Failed';
+            }
+        }
+
+        // ─── STEP 2: Process Next button ────────────────────────────────────────────
+        processNextBtn.addEventListener('click', async () => {
+            if (!step1FormData) return;
+
+            processNextBtn.disabled = true;
+            processNextBtn.textContent = 'Processing…';
+            step2Panel.classList.remove('hidden');
+            step2IntentBox.classList.add('hidden');
+            step2QrBox.classList.add('hidden');
+            step2CollectBox.classList.add('hidden');
+            step2AppsGrid.innerHTML = '';
+            step2Json.textContent = '';
+            currentIntentUri = null;
+            stopStep2Poll();
+            updateStep2Notice('⏳ Initiating PayU transaction…', 'info');
+
+            const { amount, productinfo, firstname, email, phone, vpa, method } = step1FormData;
+
+            let endpoint, payload;
+            if (method === 'upi_vpa') {
+                endpoint = '/api/payments/generate-upi-collect';
+                payload  = { amount, productinfo, firstname, email, phone, vpa, paymentType: 'one-time' };
+            } else if (method === 'upi_qr') {
+                endpoint = '/api/payments/generate-qr-one-time';
+                payload  = { amount, productinfo, firstname, email, phone };
+            } else {
+                // upi_intent
+                endpoint = '/api/payments/generate-upi-intent';
+                payload  = { amount, productinfo, firstname, email, phone, paymentType: 'one-time' };
+            }
+
+            try {
+                const res  = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                step2Json.textContent = JSON.stringify(data, null, 2);
+
+                if (!res.ok || !data.success) {
+                    updateStep2Notice(`❌ ${data.error || data.message || 'PayU initiation failed'}`, 'error');
+                    return;
+                }
+
+                if (method === 'upi_intent') {
+                    // data.intentUri is the normalised UPI URI; data.supportedApps has per-app intent:// URIs
+                    const intentUri = data.intentUri;
+                    if (!intentUri) { updateStep2Notice('❌ PayU did not return a UPI intent URI.', 'error'); return; }
+                    buildStep2IntentUI(intentUri, data.supportedApps || [], data.device);
+                    updateStep2Notice('📱 Tap an app to open it directly, or scan the QR below. Waiting for confirmation…', 'info');
+                    startStep2Poll(data.txnid, amount);
+
+                } else if (method === 'upi_qr') {
+                    const rawIntent = data.data?.result?.intentURIData || data.data?.result?.intentUrl || data.data?.result?.qrString;
+                    const intentUri = buildUpiUri(rawIntent);
+                    if (!intentUri) { updateStep2Notice('❌ PayU did not return a QR string.', 'error'); return; }
+                    renderQr(intentUri);
+                    updateStep2Notice('📲 Scan the QR code with any UPI app. Waiting for confirmation…', 'info');
+                    startStep2Poll(data.txnid, amount);
+
+                } else {
+                    // upi_vpa
+                    step2CollectBox.classList.remove('hidden');
+                    step2VpaTarget.textContent = vpa;
+                    updateStep2Notice('📲 Collect request sent. Open your UPI app and approve it.', 'info');
+                    startStep2Poll(data.txnid, amount);
+                }
+            } catch (err) {
+                updateStep2Notice(`❌ Fetch error: ${err.message}`, 'error');
+            } finally {
+                processNextBtn.disabled = false;
+                processNextBtn.textContent = '🚀 Process Next';
+            }
+        });
+    })();
+    </script>
+</body>
+</html>

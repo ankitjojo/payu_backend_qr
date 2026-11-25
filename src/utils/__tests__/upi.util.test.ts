@@ -97,3 +97,35 @@ describe('UPI Utility', () => {
     });
   });
 });
+
+const mandateUri = 'upi://mandate?pa=merchant@icici&pn=Merchant%20Name&am=2.00&fam=1.00&recur=MONTHLY&validitystart=05112026&validityend=05112029&txnType=CREATE';
+
+it('preserves a complete PayU mandate URI and its billing parameters', () => {
+  expect(buildUpiPaymentUri(mandateUri)).toBe(mandateUri);
+  expect(extractUpiQuery(mandateUri)).toBe(mandateUri.split('?')[1]);
+});
+
+it('keeps mandate app launches on the mandate action', () => {
+  const apps = getSupportedUpiApps(mandateUri, 'Android');
+  expect(apps).toHaveLength(1);
+  expect(apps[0]?.deepLink).toBe(mandateUri);
+  expect(apps[0]?.recommendedLaunchUrl).toBe(
+    `intent://mandate?${mandateUri.split('?')[1]}#Intent;scheme=upi;end`,
+  );
+});
+
+it.each(['https://example.com?pa=merchant@bank', 'upi://unknown?pa=merchant@bank']) (
+  'rejects unsupported intent schemes: %s', uri => {
+    expect(buildUpiPaymentUri(uri)).toBeNull();
+  },
+);
+
+
+it.each([
+  'pa=merchant@bank&pn=Merchant Name&am=1.00',
+  '?pa=merchant@bank&pn=Merchant+Name&am=1.00',
+  'upi://pay?pa=merchant@bank&pn=Merchant%20Name&am=1.00',
+  'UPI://PAY?pa=merchant@bank&pn=Merchant+Name&am=1.00',
+])('retains one-time URI normalization: %s', raw => {
+  expect(buildUpiPaymentUri(raw)).toBe('upi://pay?pa=merchant%40bank&pn=Merchant%20Name&am=1.00');
+});

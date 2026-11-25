@@ -18,6 +18,14 @@
         </div>
 
         <form id="paymentJourneyForm">
+            <div class="step-section">
+                <label for="deviceType"><strong>Device type</strong></label>
+                <select id="deviceType" name="deviceType" aria-describedby="deviceTypeHint">
+                    <option value="web" selected>Web</option>
+                    <option value="android">Android</option>
+                </select>
+                <p id="deviceTypeHint">Web shows PhonePe, GPay, Paytm, BHIM UPI, CRED shortcuts + a QR code. Choose Android to use deep-links on your phone.</p>
+            </div>
             <!-- Step 1: Select Payment Method -->
             <div class="step-section">
                 <div class="step-title">
@@ -29,7 +37,7 @@
                         <span class="badge">Recommended</span>
                         <div class="method-icon">📱</div>
                         <div class="method-name">UPI Intent</div>
-                        <div class="method-desc">Direct launch in GPay, PhonePe, Paytm, CRED & UPI apps</div>
+                        <div class="method-desc">Choose a UPI app or scan a QR with your phone</div>
                     </div>
                     <div class="method-card" data-method="upi-qr">
                         <span class="badge">Desktop</span>
@@ -162,16 +170,22 @@
             </div>
 
             <!-- UPI Intent App Chooser Box -->
-            <div id="upiIntentContainer" class="hidden" style="margin-top: 16px;">
+            <section id="upiIntentContainer" class="hidden" aria-labelledby="intentHeading" tabindex="-1" style="margin-top: 16px;">
                 <div id="deviceBadge" class="device-badge"></div>
                 <h4 id="intentHeading" style="margin: 0 0 6px 0;">Select a UPI App to Pay:</h4>
-                <p style="font-size: 13px; color: #586069; margin: 0 0 12px 0;">Tap your installed UPI app to launch it directly on this mobile device.</p>
+                <p id="intentHelp" style="font-size: 13px; color: #586069; margin: 0 0 12px 0;"></p>
                 <div id="upiAppsGrid" class="upi-apps-grid"></div>
+                <details id="specificAppsDetails" class="hidden" style="margin-top: 12px;">
+                    <summary style="font-size: 13px; font-weight: 600; color: #4a5568; cursor: pointer; padding: 4px 0;">
+                        📱 Or choose a specific app (if installed) ▾
+                    </summary>
+                    <div id="specificAppsGrid" class="upi-apps-grid" style="margin-top: 8px;"></div>
+                </details>
                 <div style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
                     <button type="button" id="copyIntentBtn" class="secondary-btn" style="flex: 1; min-width: 130px;">📋 Copy UPI Link</button>
                     <button type="button" id="toggleQrFallbackBtn" class="secondary-btn" style="flex: 1; min-width: 130px;">🔄 Toggle QR Code</button>
                 </div>
-            </div>
+            </section>
 
             <!-- QR Code Display Box -->
             <div id="qrCodeContainer" class="hidden" style="text-align: center; margin-top: 20px;">

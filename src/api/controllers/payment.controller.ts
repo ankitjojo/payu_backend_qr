@@ -65,18 +65,64 @@ export class PaymentController {
 
   public generateQR = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { amount, productinfo, firstname, email, phone, siDetails } = req.body;
+      const { amount, productinfo, firstname, email, phone, siDetails } = req.body ?? {};
+
+      const amountString = typeof amount === 'number' ? String(amount) : amount;
+      if (typeof amountString !== 'string' || !/^\d+(\.\d{1,2})?$/.test(amountString) ||
+          !Number.isFinite(Number(amountString)) || Number(amountString) <= 0) {
+        return res.status(400).json({ success: false, error: 'amount must be positive with at most two decimal places' });
+      }
+      if (![productinfo, firstname, email, phone].every(
+        value => typeof value === 'string' && value.trim().length > 0 && !value.includes('|'),
+      ) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\+?[0-9]{7,15}$/.test(phone)) {
+        return res.status(400).json({ success: false, error: 'Valid productinfo, firstname, email and phone are required' });
+      }
+      const deviceInfo = req.get('user-agent');
+      if (!req.ip || !deviceInfo?.trim()) {
+        return res.status(400).json({ success: false, error: 'Client IP and User-Agent are required' });
+      }
+
+      if (!siDetails || typeof siDetails !== 'object' || Array.isArray(siDetails) ||
+          !['billingAmount', 'billingCurrency', 'billingCycle', 'paymentStartDate', 'paymentEndDate'].every(
+            field => typeof siDetails[field] === 'string' && siDetails[field].trim().length > 0,
+          ) || !Number.isInteger(siDetails.billingInterval) || siDetails.billingInterval <= 0) {
+        return res.status(400).json({ success: false, error: 'Valid siDetails are required for a subscription mandate' });
+      }
 
       const payload = await this.paymentService.generateQRMandate(
-        amount,
+        amountString,
         productinfo,
         firstname,
         email,
         phone,
         siDetails,
+        req.ip,
+        deviceInfo,
       );
 
-      res.status(200).json({
+      const payuResponse = payload.payuResponse;
+      const isFailed =
+        payuResponse &&
+        typeof payuResponse === 'object' &&
+        (['failed', 'failure', '0'].includes(String(payuResponse.status).toLowerCase()) ||
+          ['failed', 'failure', '0'].includes(String(payuResponse.metaData?.txnStatus).toLowerCase()) ||
+          ['failed', 'failure', '0'].includes(String(payuResponse.metaData?.unmappedStatus).toLowerCase()));
+
+      if (isFailed) {
+        const errorMsg =
+          payuResponse?.metaData?.message ||
+          payuResponse?.message ||
+          payuResponse?.error ||
+          'PayU rejected the subscription QR request. See data for details.';
+        return res.status(502).json({
+          success: false,
+          error: errorMsg,
+          data: payuResponse,
+          txnid: payload.txnid,
+        });
+      }
+
+      return res.status(200).json({
         success: true,
         data: payload.payuResponse,
         txnid: payload.txnid,

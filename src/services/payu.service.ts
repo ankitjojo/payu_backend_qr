@@ -1,9 +1,15 @@
 import { payuConfig } from '../config/payu.config';
-import { PayUMandateRequest, PayUSIDetails, PayUOneTimeQRDetails } from '../core/interfaces/payu.interface';
+import {
+  PayUMandateRequest,
+  PayUSIDetails,
+  PayUOneTimeQRDetails,
+  PayUCommandResult,
+} from '../core/interfaces/payu.interface';
 import { generateHashForPayment, generateHashForCommand } from '../utils/hash.util';
 import { HttpHelper } from '../utils/http.util';
 import { PayUCommand } from '../core/enums/payu.enum';
 import { logger } from '../utils/logger.util';
+import { buildPostmanCurl } from '../utils/curl.util';
 
 export class PayUService {
   /**
@@ -58,9 +64,10 @@ export class PayUService {
     surl: string,
     furl: string,
     siDetails: PayUSIDetails,
+    clientIp: string,
+    deviceInfo: string,
   ): Promise<any> {
     const siDetailsStr = JSON.stringify(siDetails);
-    console.log({siDetailsStr});
     const hash = generateHashForPayment(txnid, amount, productinfo, firstname, email, siDetailsStr);
 
     const payload: any = {
@@ -75,6 +82,8 @@ export class PayUService {
       furl,
       si: 1, // 1 for setting up standing instruction
       si_details: siDetailsStr,
+      s2s_client_ip: clientIp,
+      s2s_device_info: deviceInfo,
       pg: 'UPI',
       bankcode: 'INTENT',
       txn_s2s_flow: 4,
@@ -226,20 +235,34 @@ export class PayUService {
   }
 
   /**
+   * Sends one signed postservice command. hash = sha512(key|command|var1|salt).
+   * var1 is hashed exactly as sent. No salt in the returned request or curl.
+   * Never throws: a PayU/network error comes back as the response so the UI can show it raw.
+   */
+  public async postCommand(
+    command: PayUCommand,
+    var1: string,
+    extra: Record<string, string> = {},
+  ): Promise<PayUCommandResult> {
+    const hash = generateHashForCommand(command, var1);
+    const data: Record<string, string> = { key: payuConfig.merchantKey, command, var1, hash, ...extra };
+    const curl = buildPostmanCurl(payuConfig.endpoints.apiUrl, data);
+
+    let response: any;
+    try {
+      response = await HttpHelper.postForm<any>(payuConfig.endpoints.apiUrl, data);
+    } catch (err: any) {
+      response = err?.response?.data ?? { error: err?.message ?? 'Request to PayU failed' };
+    }
+    return { command, request: data, curl, response };
+  }
+
+  /**
    * Verifies a transaction status with PayU
    */
   public async verifyTransaction(txnid: string): Promise<any> {
-    const command = PayUCommand.VERIFY_PAYMENT;
-    const hash = generateHashForCommand(command, txnid);
-
-    const data = {
-      key: payuConfig.merchantKey,
-      command,
-      var1: txnid,
-      hash,
-    };
-
     logger.info(`Verifying transaction: ${txnid}`);
-    return await HttpHelper.postForm(payuConfig.endpoints.apiUrl, data);
+    return (await this.postCommand(PayUCommand.VERIFY_PAYMENT, txnid)).response;
   }
+
 }

@@ -216,6 +216,8 @@ export class PaymentService {
     email: string,
     phone: string,
     siDetails: PayUSIDetails,
+    clientIp: string,
+    deviceInfo: string,
   ) {
     const txnid = 'TxnQR' + crypto.randomBytes(8).toString('hex');
 
@@ -232,6 +234,8 @@ export class PaymentService {
       surl,
       furl,
       siDetails,
+      clientIp,
+      deviceInfo,
     );
 
     return { txnid, payuResponse: result };
@@ -266,6 +270,8 @@ export class PaymentService {
         surl,
         furl,
         request.siDetails,
+        request.s2s_client_ip,
+        request.s2s_device_info,
       );
     } else {
       payuResponse = await this.payuService.generateOneTimeQRS2S(

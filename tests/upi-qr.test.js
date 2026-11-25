@@ -26,3 +26,27 @@ test('rejects missing or invalid intent data', () => {
         assert.equal(buildUri(value), null);
     }
 });
+
+
+test('preserves PayU subscription mandate URI for QR rendering', () => {
+    const uri = 'upi://mandate?pa=merchant@icici&pn=Merchant%20Name&mn=UPISubscription&am=2.00&fam=1.00&amrule=MAX&recur=MONTHLY&recurvalue=1&recurtype=AFTER&validitystart=05112026&validityend=05112029&txnType=CREATE';
+    assert.equal(buildUri(uri), uri);
+});
+
+test('rejects unsupported schemes and mandates without a payee', () => {
+    for (const uri of ['https://example.com?pa=merchant@bank', 'upi://unknown?pa=merchant@bank', 'upi://mandate?am=2.00']) {
+        assert.equal(buildUri(uri), null);
+    }
+});
+
+
+test('retains one-time normalization for query-only and complete payment URIs', () => {
+    for (const raw of [
+        'pa=merchant@bank&pn=Merchant Name&am=1.00',
+        '?pa=merchant@bank&pn=Merchant+Name&am=1.00',
+        'upi://pay?pa=merchant@bank&pn=Merchant%20Name&am=1.00',
+        'UPI://PAY?pa=merchant@bank&pn=Merchant+Name&am=1.00',
+    ]) {
+        assert.equal(buildUri(raw), 'upi://pay?pa=merchant%40bank&pn=Merchant%20Name&am=1.00');
+    }
+});

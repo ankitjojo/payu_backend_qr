@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedTypeInput = document.getElementById('selectedType');
     const methodsGrid = document.getElementById('methodsGrid');
     const typeSelector = document.getElementById('typeSelector');
+    const deviceTypeSelect = document.getElementById('deviceType');
     const vpaSection = document.getElementById('vpaSection');
     const vpaInput = document.getElementById('vpa');
     const verifyVpaBtn = document.getElementById('verifyVpaBtn');
@@ -100,6 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
         mainPayBtn.style.backgroundColor = btnBg;
         resetDisplay();
     }
+
+    deviceTypeSelect?.addEventListener('change', updateJourneyUI);
 
     // Step 1: Payment Method selection click handler
     methodsGrid?.addEventListener('click', (e) => {
@@ -214,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             if (method === 'upi-intent') {
-                await handleUpiIntentJourney(payload, isOneTime);
+                await handleUpiIntentJourney(payload, isOneTime, deviceTypeSelect?.value || 'web');
             } else if (method === 'upi-qr') {
                 await handleUpiQrJourney(payload, isOneTime);
             } else if (method === 'upi-collect') {
@@ -232,7 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 1. UPI Intent Journey Flow
-    async function handleUpiIntentJourney(payload, isOneTime) {
+    async function handleUpiIntentJourney(payload, isOneTime, deviceType) {
         const response = await fetch(endpoints.generateUpiIntent, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -250,59 +253,126 @@ document.addEventListener('DOMContentLoaded', () => {
                 result.data?.result?.qrString
             );
 
+            if (!intentUri) {
+                alert('PayU did not return a usable UPI intent. See the response for details.');
+                return;
+            }
             upiIntentContainer.classList.remove('hidden');
 
+            const isAndroid = /android/i.test(navigator.userAgent);
+            const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            const isMobile = isAndroid || isIos;
             const deviceBadge = document.getElementById('deviceBadge');
-            const isMobile = result.device?.isMobile || /mobi|android|iphone|ipad/i.test(navigator.userAgent);
-            const osName = result.device?.os ? result.device.os.toUpperCase() : (isMobile ? 'MOBILE' : 'DESKTOP');
-            deviceBadge.className = 'device-badge ' + (isMobile ? 'mobile' : 'desktop');
-            deviceBadge.textContent = isMobile
-                ? `📱 Mobile Device (${osName}) — Tap an app to launch`
-                : `💻 Desktop Mode (${osName}) — Test intent link or scan QR`;
+            deviceBadge.className = 'device-badge ' + (deviceType === 'android' ? 'mobile' : 'desktop');
+            deviceBadge.textContent = deviceType === 'android' ? 'Android' : 'Web';
+            document.getElementById('intentHelp').textContent = isIos
+                ? 'iPhone and iPad browsers cannot reliably show a UPI app chooser. Use the QR code with your preferred UPI app.'
+                : isMobile
+                ? 'Tap “Pay by any UPI app” to open your device chooser showing only the UPI apps installed on this phone.'
+                : 'Desktop Web detected. Mobile UPI apps cannot run directly on a computer. Scan the QR code below with any UPI app on your phone.';
 
             const upiAppsGrid = document.getElementById('upiAppsGrid');
             upiAppsGrid.innerHTML = '';
-
             const apps = result.supportedApps || [];
-            apps.forEach(app => {
+            const universalApps = apps.filter(app => app.isUniversal);
+
+            // Browsers cannot enumerate installed UPI apps. The universal handler delegates
+            // the choice to the device, which can show only compatible installed apps.
+            const primaryApps = universalApps.length > 0 ? universalApps : apps;
+
+            // Static well-known UPI apps shown on web so users know which apps they can open
+            const upiQuery = intentUri.includes('?') ? intentUri.slice(intentUri.indexOf('?') + 1) : '';
+            const STATIC_UPI_APPS = [
+                { name: 'PhonePe',    emoji: '💜', bgColor: '#5f259f', color: '#fff', deepLink: `phonepe://pay?${upiQuery}` },
+                { name: 'Google Pay', emoji: '🔵', bgColor: '#1a73e8', color: '#fff', deepLink: `tez://upi/pay?${upiQuery}` },
+                { name: 'Paytm',      emoji: '🔷', bgColor: '#00BAF2', color: '#fff', deepLink: `paytmmp://pay?${upiQuery}` },
+                { name: 'BHIM UPI',   emoji: '🇮🇳', bgColor: '#FF6B00', color: '#fff', deepLink: `bhim://pay?${upiQuery}` },
+                { name: 'CRED',       emoji: '⚫', bgColor: '#1a1a1a', color: '#fff', deepLink: `credpay://?${upiQuery}` },
+            ];
+
+            function createAppCard(app, isStatic = false) {
                 const card = document.createElement('a');
                 card.className = 'upi-app-card' + (app.isUniversal ? ' universal' : '');
-                card.href = app.recommendedLaunchUrl || app.deepLink;
+                const launchUrl = isStatic ? app.deepLink : getUpiLaunchUrl(app, deviceType, navigator.userAgent);
+                card.href = launchUrl;
                 card.setAttribute('role', 'button');
 
                 const icon = document.createElement('div');
                 icon.className = 'upi-app-icon';
                 icon.style.backgroundColor = app.bgColor || '#eee';
                 icon.style.color = app.color || '#333';
-                icon.textContent = app.isUniversal ? '⚡' : app.shortName.charAt(0);
+                icon.textContent = isStatic ? app.emoji : (app.isUniversal ? '⚡' : app.shortName.charAt(0));
 
                 const label = document.createElement('span');
-                label.textContent = app.name;
+                label.textContent = isIos && app.isUniversal ? 'Show QR to Pay' :
+                    app.isUniversal ? 'Pay by any UPI app' : app.name;
 
                 card.appendChild(icon);
                 card.appendChild(label);
 
                 card.addEventListener('click', (evt) => {
                     evt.preventDefault();
-                    const launchUrl = app.recommendedLaunchUrl || app.deepLink;
+                    if (!isMobile) {
+                        renderQrCode(intentUri, isOneTime);
+                        updateNotice(
+                            `Scan the QR below with ${app.name || 'any UPI app'} on your phone to pay.`,
+                            'info',
+                        );
+                        return;
+                    }
+                    if (isIos) {
+                        renderQrCode(intentUri, isOneTime);
+                        updateNotice(
+                            'Use the QR code with your preferred UPI app. iOS may send generic UPI links to an arbitrary app.',
+                            'info',
+                        );
+                        return;
+                    }
                     updateNotice(`🚀 Launching ${app.name}... Please complete the payment.`, 'info');
                     window.location.href = launchUrl;
                 });
+                return card;
+            }
 
-                upiAppsGrid.appendChild(card);
+            primaryApps.forEach(app => {
+                upiAppsGrid.appendChild(createAppCard(app, false));
             });
+
+            // On web mode show static branded app tiles so users know their options
+            if (deviceType === 'web' || !isMobile) {
+                const divider = document.createElement('p');
+                divider.style.cssText = 'font-size:12px;color:#718096;margin:12px 0 6px;font-weight:600;';
+                divider.textContent = 'Or open directly in a specific app (tap on phone, or scan QR on desktop):';
+                upiAppsGrid.after(divider);
+
+                const staticGrid = document.createElement('div');
+                staticGrid.className = 'upi-apps-grid';
+                staticGrid.style.marginTop = '0';
+                STATIC_UPI_APPS.forEach(app => staticGrid.appendChild(createAppCard(app, true)));
+                divider.after(staticGrid);
+            }
 
             // Wire Copy Intent Link
             const copyBtn = document.getElementById('copyIntentBtn');
             if (copyBtn) {
+                // Show a tooltip on desktop explaining the link only works on mobile
+                if (!isMobile) {
+                    copyBtn.title = 'upi:// links only open on Android/iOS. Paste this link on your phone, or scan the QR code above.';
+                }
                 copyBtn.onclick = () => {
                     if (intentUri) {
                         navigator.clipboard?.writeText(intentUri).then(() => {
                             const orig = copyBtn.textContent;
                             copyBtn.textContent = '✅ Copied!';
+                            if (!isMobile) {
+                                updateNotice(
+                                    '📋 UPI link copied. Note: paste it on your Android phone (WhatsApp, SMS, any app), not in a browser — browsers cannot open upi:// links. Use the QR above if you\'re on desktop.',
+                                    'info',
+                                );
+                            }
                             setTimeout(() => { copyBtn.textContent = orig; }, 2000);
                         }).catch(() => {
-                            prompt('Copy UPI Intent URI:', intentUri);
+                            prompt('Copy UPI Intent URI (open on your phone, not in a browser):', intentUri);
                         });
                     }
                 };
@@ -321,10 +391,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             }
 
-            // If desktop, render QR code automatically for testing
-            if (!isMobile && intentUri) {
+            // Web mode always offers QR alongside the app chooser.
+            if (deviceType === 'web' || !isAndroid) {
                 renderQrCode(intentUri, isOneTime);
             }
+
+            upiIntentContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            upiIntentContainer.focus({ preventScroll: true });
 
             const activeTxnid = result.txnid || result.data?.metaData?.txnId;
             startPolling(activeTxnid, payload.amount, isOneTime);
@@ -359,10 +432,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Hosted checkout fallback returned by PayU.');
                 document.write(payuResponse);
             } else {
-                alert('Failed to extract QR intent string from PayU response.');
+                const errorMsg =
+                    payuResponse?.metaData?.message ||
+                    payuResponse?.message ||
+                    result.error ||
+                    'Failed to extract QR intent string from PayU response.';
+                alert(errorMsg);
+                updateNotice(`❌ ${errorMsg}`, 'error');
             }
         } else {
-            alert(result.error || 'Failed to generate QR payment.');
+            const errorMsg = result.error || result.message || 'Failed to generate QR payment.';
+            alert(errorMsg);
+            updateNotice(`❌ ${errorMsg}`, 'error');
         }
     }
 
@@ -548,12 +629,25 @@ function submitPayUForm(payuData) {
     }, 1500);
 }
 
-/** Convert PayU's query-only intent data into a scannable UPI payment URI. */
+/** Normalize query-only intents and preserve PayU payment/mandate URIs. */
 function buildUpiPaymentUri(intentData) {
     if (typeof intentData !== 'string' || !intentData.trim()) return null;
     const value = intentData.trim();
-    const query = value.replace(/^upi:\/\/pay\?/i, '').replace(/^\?/, '');
+    const prefix = value.match(/^upi:\/\/(pay|mandate)\?/i);
+    if (!prefix && /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+    const query = (prefix ? value.slice(prefix[0].length) : value).replace(/^\?/, '');
     const params = new URLSearchParams(query);
     if (!params.get('pa')) return null;
+    // Keep mandate URIs intact; retain existing normalization for one-time payments.
+    if (prefix?.[1]?.toLowerCase() === 'mandate') return value;
     return `upi://pay?${params.toString().replace(/\+/g, '%20')}`;
+}
+
+
+/** Choose presentation links without changing the real device information sent to PayU. */
+function getUpiLaunchUrl(app, deviceType, userAgent) {
+    if (deviceType === 'android' && /android/i.test(userAgent)) {
+        return app.androidIntent || app.deepLink;
+    }
+    return app.deepLink;
 }

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Ops – PayU UPI S2S</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ops-header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+        .ops-header h1 { color: #fff; font-size: 20px; margin: 0 0 4px 0; }
+        .ops-header p  { color: #a0aec0; font-size: 13px; margin: 0; }
+
+        .shared-box { background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 16px; display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+        @media (max-width: 560px) { .shared-box { grid-template-columns: 1fr; } }
+
+        .op-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+        @media (max-width: 560px) { .op-tabs { grid-template-columns: repeat(2, 1fr); } }
+        .op-tab { border: 2px solid #e2e8f0; border-radius: 10px; padding: 12px 8px; cursor: pointer; text-align: center; background: #fff; transition: all .2s; font: inherit; }
+        .op-tab:hover { border-color: #cbd5e0; }
+        .op-tab.active { border-color: #0288d1; background: #e8f5fe; box-shadow: 0 0 0 2px rgba(2,136,209,.15); }
+        .op-tab .t-num  { font-size: 18px; }
+        .op-tab .t-name { font-size: 12px; font-weight: 700; color: #1a202c; margin-top: 4px; }
+        .op-tab .t-cmd  { font-size: 10px; color: #718096; font-family: monospace; margin-top: 3px; }
+
+        .op-form { display: none; }
+        .op-form.active { display: block; }
+        .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+        @media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
+        .field label { display: block; font-size: 12px; font-weight: 600; color: #4a5568; margin-bottom: 4px; }
+        .field input, .field select, .field textarea { width: 100%; padding: 9px 11px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; box-sizing: border-box; background: #fff; font-family: inherit; }
+        .field textarea { min-height: 80px; font-family: monospace; font-size: 13px; }
+        .field .hint { font-size: 11px; color: #718096; margin-top: 3px; }
+        .req { color: #e53e3e; }
+        .with-btn { display: flex; gap: 6px; }
+        .with-btn input { flex: 1; }
+        .regen-btn { background: #edf2f7; border: 1px solid #cbd5e0; color: #4a5568; padding: 0 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .mode-row { display: flex; gap: 16px; margin-bottom: 12px; font-size: 13px; }
+        .warn-box { background: #fffbea; border: 1px solid #f6d860; color: #8a5a00; border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-bottom: 12px; }
+        details.adv summary { cursor: pointer; font-size: 13px; font-weight: 600; color: #4a5568; margin-bottom: 8px; }
+
+        .response-panel { margin-top: 22px; }
+        .status-badge { display: inline-flex; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+        .status-badge.pending { background: #fffbea; color: #b7791f; border: 1px solid #f6d860; }
+        .status-badge.success { background: #e6ffed; color: #22863a; border: 1px solid #acf2bd; }
+        .status-badge.error   { background: #ffeef0; color: #cb2431; border: 1px solid #f97583; }
+        .summary { font-size: 13px; color: #2d3748; margin-bottom: 10px; }
+        .summary button { margin-left: 6px; }
+        .resp-tabs { display: flex; gap: 4px; }
+        .resp-tab { padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #e2e8f0; border-bottom: none; border-radius: 6px 6px 0 0; background: #f7fafc; color: #718096; font-family: inherit; }
+        .resp-tab.active { background: #fff; color: #1a202c; border-color: #cbd5e0; }
+        .resp-pane { display: none; }
+        .resp-pane.active { display: block; }
+        pre.resp-pre { margin: 0; padding: 14px; font-size: 12px; font-family: 'SFMono-Regular', Consolas, monospace; line-height: 1.6; background: #1a202c; color: #e2e8f0; border-radius: 0 6px 6px 6px; min-height: 100px; white-space: pre-wrap; word-break: break-all; }
+        .txn-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px; display: block; overflow-x: auto; }
+        .txn-table th, .txn-table td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; white-space: nowrap; }
+        .txn-table th { background: #f7fafc; }
+        .small-btn { background: #e8f5fe; border: 1px solid #90cdf4; color: #0277bd; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-weight: 600; }
+        .res-block { margin-top: 16px; }
+        .res-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 13px; font-weight: 700; color: #2d3748; }
+        .copy-btn { background: #edf2f7; border: 1px solid #cbd5e0; color: #2d3748; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+        .copy-btn:hover { background: #e2e8f0; }
+        .res-meta { font-size: 12px; color: #718096; margin: 12px 0 0; }
+        pre.resp-pre { border-radius: 6px; }
+        .log-box { margin-top: 28px; border-top: 1px solid #e2e8f0; padding-top: 14px; }
+        .log-box h3 { font-size: 14px; margin: 0; }
+        .log-row { border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 8px; background: #fff; }
+        .log-row > summary { cursor: pointer; padding: 8px 10px; font-size: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .log-row .log-body { padding: 0 10px 10px; }
+        .log-time { font-family: monospace; color: #718096; }
+        .hidden { display: none !important; }
+        .back-link { font-size: 13px; color: #0288d1; text-decoration: none; display: inline-block; margin-bottom: 14px; }
+    </style>
+</head>
+<body>
+<div class="container" style="max-width: 820px;">
+    <a href="/" class="back-link">← Back to PayU Hub</a>
+
+    <div class="ops-header">
+        <h1>🔁 UPI Subscription S2S Operations</h1>
+        <p>Test page. No validation, any order. Each call shows the Postman curl and PayU's raw response, both copyable.</p>
+    </div>
+
+    <div class="shared-box" style="grid-template-columns: 1fr;">
+        <div class="field">
+            <label for="sharedAuthPayuId">authpayuid (registration mihpayid) — optional, fills ①②③</label>
+            <input type="text" id="sharedAuthPayuId" placeholder="e.g. 25600438037">
+        </div>
+    </div>
+
+    <div class="op-tabs" role="tablist">
+        <button type="button" class="op-tab active" data-op="mandateStatus" role="tab"><div class="t-num">①</div><div class="t-name">Verify Mandate</div><div class="t-cmd">upi_mandate_status</div></button>
+        <button type="button" class="op-tab" data-op="preDebit" role="tab"><div class="t-num">②</div><div class="t-name">Pre-Debit Notify</div><div class="t-cmd">pre_debit_SI</div></button>
+        <button type="button" class="op-tab" data-op="recurringPayment" role="tab"><div class="t-num">③</div><div class="t-name">Recurring Payment</div><div class="t-cmd">si_transaction</div></button>
+        <button type="button" class="op-tab" data-op="verifyPayment" role="tab"><div class="t-num">④</div><div class="t-name">Verify Payment</div><div class="t-cmd">verify_payment</div></button>
+    </div>
+
+    <!-- ① Verify Mandate Registration -->
+    <section class="op-pane" data-op="mandateStatus">
+        <form class="op-form active" data-op="mandateStatus" novalidate>
+            <div class="grid-2">
+                <div class="field"><label>authPayuId</label><input type="text" name="authPayuId" data-auth></div>
+                <div class="field">
+                    <label>requestId</label>
+                    <div class="with-btn"><input type="text" name="requestId" data-gen="REQ"><button type="button" class="regen-btn" data-regen title="New ID">↻</button></div>
+                </div>
+            </div>
+            <button type="submit" class="primary-btn">🔎 Send</button>
+        </form>
+    </section>
+
+    <!-- ② Pre-Debit SI Notification -->
+    <section class="op-pane hidden" data-op="preDebit">
+        <form class="op-form active" data-op="preDebit" novalidate>
+            <div class="grid-2">
+                <div class="field"><label>authpayuid</label><input type="text" name="authpayuid" data-auth></div>
+                <div class="field">
+                    <label>requestId</label>
+                    <div class="with-btn"><input type="text" name="requestId" data-gen="REQ"><button type="button" class="regen-btn" data-regen title="New ID">↻</button></div>
+                </div>
+                <div class="field"><label>debitDate (YYYY-MM-DD)</label><input type="text" name="debitDate" data-default-date="2"></div>
+                <div class="field"><label>amount</label><input type="text" name="amount" value="1.00"></div>
+                <div class="field"><label>mandateSeqNo</label><input type="text" name="mandateSeqNo" placeholder="optional"></div>
+                <div class="field"><label>action</label><select name="action"><option value="">—</option><option>Retrieve</option><option>Delete</option></select></div>
+            </div>
+            <button type="submit" class="primary-btn">📣 Send</button>
+        </form>
+    </section>
+
+    <!-- ③ Recurring Payment Transaction -->
+    <section class="op-pane hidden" data-op="recurringPayment">
+        <form class="op-form active" data-op="recurringPayment" novalidate>
+            <div class="grid-2">
+                <div class="field"><label>authpayuid</label><input type="text" name="authpayuid" data-auth></div>
+                <div class="field">
+                    <label>txnid</label>
+                    <div class="with-btn"><input type="text" name="txnid" data-gen="TxnSI"><button type="button" class="regen-btn" data-regen title="New ID">↻</button></div>
+                </div>
+                <div class="field"><label>amount</label><input type="text" name="amount" value="1.00"></div>
+                <div class="field"><label>phone</label><input type="text" name="phone" placeholder="optional"></div>
+                <div class="field"><label>email</label><input type="text" name="email" placeholder="optional"></div>
+                <div class="field"><label>mandateSeqNo</label><input type="text" name="mandateSeqNo" placeholder="optional"></div>
+            </div>
+            <details class="adv">
+                <summary>udf1–udf5</summary>
+                <div class="grid-2">
+                    <div class="field"><label>udf1</label><input type="text" name="udf1"></div>
+                    <div class="field"><label>udf2</label><input type="text" name="udf2"></div>
+                    <div class="field"><label>udf3</label><input type="text" name="udf3"></div>
+                    <div class="field"><label>udf4</label><input type="text" name="udf4"></div>
+                    <div class="field"><label>udf5</label><input type="text" name="udf5"></div>
+                </div>
+            </details>
+            <button type="submit" class="primary-btn" style="background:#c53030;">💸 Send</button>
+        </form>
+    </section>
+
+    <!-- ④ Verify Payment / Get Transaction Details -->
+    <section class="op-pane hidden" data-op="verifyPayment">
+        <form class="op-form active" data-op="verifyPayment" novalidate>
+            <div class="mode-row">
+                <label><input type="radio" name="mode" value="txnid" checked> By txnid (verify_payment)</label>
+                <label><input type="radio" name="mode" value="range"> By date range (get_Transaction_Details)</label>
+            </div>
+            <div class="field" data-mode="txnid" style="margin-bottom:12px;">
+                <label>txnids (one per line)</label>
+                <textarea name="txnids"></textarea>
+            </div>
+            <div class="grid-2 hidden" data-mode="range">
+                <div class="field"><label>from (YYYY-MM-DD)</label><input type="text" name="from"></div>
+                <div class="field"><label>to (YYYY-MM-DD)</label><input type="text" name="to"></div>
+            </div>
+            <button type="submit" class="primary-btn">✅ Send</button>
+        </form>
+    </section>
+
+    <!-- Result of the selected step (each step keeps its own) -->
+    <div id="resultArea" class="hidden">
+        <div class="res-meta" id="resMeta"></div>
+        <div id="resShortcuts" class="summary"></div>
+        <div class="res-block">
+            <div class="res-head"><span>Postman curl</span><button type="button" class="copy-btn" data-copy="resCurl">📋 Copy curl</button></div>
+            <pre class="resp-pre" id="resCurl">—</pre>
+        </div>
+        <div class="res-block">
+            <div class="res-head"><span>Raw response</span><button type="button" class="copy-btn" data-copy="resResponse">📋 Copy response</button></div>
+            <pre class="resp-pre" id="resResponse">—</pre>
+        </div>
+    </div>
+
+    <!-- Call log -->
+    <div class="log-box">
+        <div class="res-head"><h3>Call log (all steps, newest first)</h3><button type="button" class="copy-btn" id="clearLogBtn">Clear log</button></div>
+        <div id="logList"><div class="res-meta">No calls yet.</div></div>
+    </div>
+</div>
+
+<script src="endpoints.js"></script>
+<script src="subscription-ops.js"></script>
+</body>
+</html>

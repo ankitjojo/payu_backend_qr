@@ -1,0 +1,58 @@
+request Curl
+
+curl --location 'http://localhost:8000/user/initiate-factory-payment' \
+--header 'Content-Type: application/json' \
+--header 'project: jojo' \
+--header 'devicetype: JvY99-' \
+--header 'deviceversion: 1.0.0' \
+--header 'deviceid: device_test_12345' \
+--header 'User-Agent: PostmanRuntime/7.39.0' \
+--data-raw '{
+    "iProviderSkuId": "3xal8Jz0",
+    "sPaymentMethod": "upi_vpa",
+    "sPayuPlatform": "android",
+    "sClientRequestId": "req_payu_test_0001",
+    "sVpa": "success@upi",
+    "sCountryCode2": "IN",
+    "sCurrencyCode": "INR",
+    "nAmount": 10,
+    "sUserId": "USR_TEST_1001",
+    "sUsername": "John Doe",
+    "sEmail": "testuser@example.com",
+    "sPhoneCode": "+91",
+    "sPhoneNumber": "9876543210",
+    "sState": "Maharashtra",
+    "sCity": "Mumbai"
+}'
+
+
+
+Response
+
+
+{
+    "data": {
+        "initiateData": {
+            "sToken": "93b2bb65-032d-42f6-ab3c-d6ab69610f21",
+            "sProviderSkuId": "payu_jojo_content_49",
+            "ePaymentProvider": "PAY_U",
+            "sProviderToken": "dce070d851cde3fb416968fa",
+            "sOrderId": "dce070d851cde3fb416968fa",
+            "sProviderMerchantId": "JOJO_MADHUVEER_PAYU_INR",
+            "oPayu": {
+                "txnid": "dce070d851cde3fb416968fa",
+                "status": "UNKNOWN",
+                "fulfillmentComplete": false,
+                "nextAction": {
+                    "type": "reconcile"
+                }
+            },
+            "sStatus": "PENDING"
+        }
+    },
+    "meta-data": {
+        "message": "Existing payment attempt",
+        "status": 200
+    }
+}
+

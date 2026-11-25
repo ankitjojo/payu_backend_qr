@@ -4,6 +4,10 @@ export enum PayUCommand {
   CHECK_PAYMENT = 'check_payment',
   CANCEL_REFUND_TRANSACTION = 'cancel_refund_transaction',
   VALIDATE_VPA = 'validateVPA',
+  UPI_MANDATE_STATUS = 'upi_mandate_status',
+  PRE_DEBIT_SI = 'pre_debit_SI',
+  SI_TRANSACTION = 'si_transaction',
+  GET_TRANSACTION_DETAILS = 'get_Transaction_Details',
 }
 
 export enum PayUSubventionType {
